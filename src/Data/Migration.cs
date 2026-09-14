@@ -15,8 +15,15 @@ public static class Migration
         var srcDb = Path.Combine(currentDataDir, "data.db");
         if (File.Exists(srcDb))
         {
-            using var src = new SqliteConnection($"Data Source={srcDb};Mode=ReadOnly");
-            using var dst = new SqliteConnection($"Data Source={Path.Combine(newDir, "data.db")}");
+            using var src = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = srcDb,
+                Mode = SqliteOpenMode.ReadOnly,
+            }.ToString());
+            using var dst = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = Path.Combine(newDir, "data.db"),
+            }.ToString());
             src.Open();
             dst.Open();
             src.BackupDatabase(dst);

@@ -27,6 +27,7 @@ public sealed class ReminderEngine
     private DateTime _cycleStart = DateTime.Now;
     private bool _locked;
     private bool _idlePaused;
+    private bool _outsideWorkHours;
     private DateTime? _postponeAt;
     private DateTime? _userPauseUntil;
     private bool _pendingFire; // 勿扰期间已到点，等全屏结束后立即补弹
@@ -159,6 +160,27 @@ public sealed class ReminderEngine
             return;
         }
 
+        // 离开工作时段时清除推迟；再次进入时从当前时间开始完整的新周期。
+        // 放在锁屏/空闲检测之前，避免整夜锁屏或离开后沿用前一天的开始时间。
+        if (!InWorkHours(now))
+        {
+            if (!_outsideWorkHours)
+            {
+                _outsideWorkHours = true;
+                _postponeAt = null;
+                _pendingFire = false;
+                ResetCycle();
+                RaiseStatus();
+            }
+            return;
+        }
+        if (_outsideWorkHours)
+        {
+            _outsideWorkHours = false;
+            ResetCycle();
+            RaiseStatus();
+        }
+
         // 锁屏暂停（M1-6）：唤醒后继续剩余时间
         if (_locked) return;
 
@@ -177,13 +199,6 @@ public sealed class ReminderEngine
                 if (_config.IdleRestart) ResetCycle(); // 配置：回来后重新计时 / 继续剩余时间
                 RaiseStatus();
             }
-        }
-
-        // 非工作时段（M1-3）：不计时，回到工作时段后重新开始整个周期
-        if (!InWorkHours(now))
-        {
-            if (_remainingSec != _config.IntervalMinutes * 60.0) ResetCycle();
-            return;
         }
 
         // 午休免打扰（M1-4）：冻结剩余时间，午休后继续

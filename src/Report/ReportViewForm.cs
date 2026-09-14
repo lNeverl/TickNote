@@ -1,4 +1,3 @@
-using System.Globalization;
 using SedentaryReminder.Data;
 
 namespace SedentaryReminder.Report;
@@ -120,7 +119,7 @@ public sealed class ReportViewForm : DpiForm
         else
         {
             // PeriodKey 形如 2026-W38，解析回该周中的一天；失败则退到报告创建日期
-            var date = ParseWeekKey(entry.PeriodKey)
+            var date = _app.Reports.ParseWeekKey(entry.PeriodKey)
                 ?? (DateTime.TryParse(entry.CreatedAt, out var cd) ? cd : DateTime.Today);
             prompt = _app.Reports.BuildWeeklyPrompt(date);
         }
@@ -135,27 +134,13 @@ public sealed class ReportViewForm : DpiForm
         }
     }
 
-    /// <summary>把周报期次键（yyyy-Www，如 2026-W38）解析回该周的周一；无法解析返回 null。</summary>
-    private static DateTime? ParseWeekKey(string key)
-    {
-        var parts = key.Split('-');
-        if (parts.Length == 2 && parts[1].Length >= 2 && parts[1][0] == 'W'
-            && int.TryParse(parts[0], out var year) && int.TryParse(parts[1][1..], out var week)
-            && week is >= 1 and <= 53)
-        {
-            try { return ISOWeek.ToDateTime(year, week, DayOfWeek.Monday); }
-            catch { return null; }
-        }
-        return null;
-    }
-
     private void DeleteSelected()
     {
         if (Selected is not ReportEntry entry) return;
         if (MessageBox.Show(this, $"确定删除 {entry.PeriodKey} 的这份报告？", "确认",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
             return;
-        _app.Db.DeleteReport(entry.Id);
+        _app.Reports.DeleteReport(entry);
         Reload();
     }
 }

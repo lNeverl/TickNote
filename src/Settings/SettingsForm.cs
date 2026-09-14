@@ -92,7 +92,7 @@ public sealed class SettingsForm : DpiForm
 
     private TabPage BuildReminderTab()
     {
-        var page = new TabPage("提醒");
+        var page = new TabPage("提醒") { AutoScroll = true };
         var grid = MakeGrid();
         _numInterval = AddNumRow(grid, "提醒周期（分钟，20-120）", 20, 120);
         _numBreak = AddNumRow(grid, "活动时长（分钟，1-30）", 1, 30);
@@ -125,7 +125,7 @@ public sealed class SettingsForm : DpiForm
 
     private TabPage BuildTimeTab()
     {
-        var page = new TabPage("时间与时段");
+        var page = new TabPage("时间与时段") { AutoScroll = true };
         var grid = MakeGrid();
 
         _dtWorkStart = MakeTimePicker();
@@ -226,7 +226,7 @@ public sealed class SettingsForm : DpiForm
 
     private TabPage BuildDataTab()
     {
-        var page = new TabPage("数据");
+        var page = new TabPage("数据") { AutoScroll = true };
         var grid = MakeGrid();
 
         _lblDataDir = new Label { Text = "", AutoSize = true, MaximumSize = new Size(380, 0) }; // 长路径换行，不被裁
@@ -258,7 +258,7 @@ public sealed class SettingsForm : DpiForm
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
             try
             {
-                File.Copy(Path.Combine(_config.DataDir, "data.db"), dlg.FileName, overwrite: true);
+                BackupService.ExportDatabase(_config.DataDir, dlg.FileName);
                 MessageBox.Show(this, "已导出到：\n" + dlg.FileName, "导出成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
@@ -422,5 +422,14 @@ public sealed class SettingsForm : DpiForm
 
         MessageBox.Show(this, "数据位置已更换，软件将重启。", "完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
         _app.RestartApplication();
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        var work = Screen.FromControl(this).WorkingArea;
+        Size = new Size(Math.Min(Width, work.Width), Math.Min(Height, work.Height));
+        Location = new Point(work.Left + (work.Width - Width) / 2,
+            work.Top + (work.Height - Height) / 2);
     }
 }

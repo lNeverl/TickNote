@@ -39,9 +39,40 @@ public sealed class ReportService
         {
             week = CultureInfo.InvariantCulture.Calendar.GetWeekOfYear(
                 from, CalendarWeekRule.FirstFullWeek, DayOfWeek.Sunday);
-            year = from.AddDays(6).Year;
+            year = from.Year;
         }
         return (from, to, $"{year}-W{week:D2}");
+    }
+
+    /// <summary>按当前周起始日配置把期次键还原为该周的起始日期。</summary>
+    public DateTime? ParseWeekKey(string key)
+    {
+        var parts = key.Split('-');
+        if (parts.Length != 2 || parts[1].Length < 2 || parts[1][0] != 'W'
+            || !int.TryParse(parts[0], out var year)
+            || !int.TryParse(parts[1][1..], out var week)
+            || year is < 1 or > 9999 || week is < 1 or > 53)
+            return null;
+
+        try
+        {
+            DateTime from;
+            if (_config.WeekStartsMonday)
+            {
+                from = ISOWeek.ToDateTime(year, week, DayOfWeek.Monday);
+            }
+            else
+            {
+                var jan1 = new DateTime(year, 1, 1);
+                var firstSunday = jan1.AddDays((7 - (int)jan1.DayOfWeek) % 7);
+                from = firstSunday.AddDays((week - 1) * 7);
+            }
+            return GetWeekRange(from).Key == key ? from : null;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null;
+        }
     }
 
     // ---------------- 提示词组装 ----------------
@@ -126,7 +157,7 @@ public sealed class ReportService
             entry = new ReportEntry { ReportType = type, PeriodKey = periodKey, Content = content, CreatedAt = now };
             entry.Id = _db.InsertReport(entry);
         }
-        WriteExportCopy(entry);
+        SyncExportCopies(type, periodKey);
         return entry;
     }
 
@@ -134,21 +165,36 @@ public sealed class ReportService
     public void UpdateReport(ReportEntry entry)
     {
         _db.UpdateReport(entry);
-        WriteExportCopy(entry);
+        SyncExportCopies(entry.ReportType, entry.PeriodKey);
     }
 
-    private void WriteExportCopy(ReportEntry entry)
+    public void DeleteReport(ReportEntry entry)
+    {
+        _db.DeleteReport(entry.Id);
+        SyncExportCopies(entry.ReportType, entry.PeriodKey, entry.Id);
+    }
+
+    private void SyncExportCopies(string type, string periodKey, long? deletedId = null)
     {
         try
         {
             var dir = Path.Combine(_config.DataDir, "exports");
             Directory.CreateDirectory(dir);
-            var path = Path.Combine(dir, $"{entry.ReportType}_{entry.PeriodKey}.md");
-            File.WriteAllText(path, entry.Content);
+            if (deletedId is long id)
+                File.Delete(Path.Combine(dir, $"{type}_{periodKey}_{id}.md"));
+
+            var reports = _db.GetReports(type, periodKey);
+            foreach (var report in reports)
+                File.WriteAllText(Path.Combine(dir, $"{type}_{periodKey}_{report.Id}.md"), report.Content);
+
+            // 旧版路径继续代表最新一份报告，避免已有使用方式失效。
+            var legacyPath = Path.Combine(dir, $"{type}_{periodKey}.md");
+            if (reports.Count > 0) File.WriteAllText(legacyPath, reports[0].Content);
+            else File.Delete(legacyPath);
         }
         catch
         {
-            // 副本写失败不影响库内数据
+            // 副本同步失败不影响库内数据
         }
     }
 

@@ -45,7 +45,10 @@ public sealed class Database : IDisposable
     public Database(string dataDir)
     {
         Directory.CreateDirectory(dataDir);
-        _conn = new SqliteConnection($"Data Source={Path.Combine(dataDir, "data.db")}");
+        _conn = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = Path.Combine(dataDir, "data.db"),
+        }.ToString());
         _conn.Open();
         using (var pragma = _conn.CreateCommand())
         {
@@ -113,8 +116,9 @@ public sealed class Database : IDisposable
     {
         using var cmd = _conn.CreateCommand();
         cmd.CommandText = """
-            UPDATE work_log SET start_time=$st, end_time=$et, tag=$tag, content=$c WHERE id=$id;
+            UPDATE work_log SET log_date=$d, start_time=$st, end_time=$et, tag=$tag, content=$c WHERE id=$id;
             """;
+        cmd.Parameters.AddWithValue("$d", e.LogDate);
         cmd.Parameters.AddWithValue("$st", (object?)e.StartTime ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$et", (object?)e.EndTime ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$tag", (object?)e.Tag ?? DBNull.Value);

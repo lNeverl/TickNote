@@ -21,6 +21,12 @@ dotnet --version    :: 显示 8.x.x 即可
 dotnet build SedentaryReminder.sln
 ```
 
+回归检查（流水日期、在线数据库导出与迁移、周报期次、报告副本）：
+
+```
+dotnet run --project tests\RegressionTests.csproj
+```
+
 ## 打包（产出单文件 EXE）
 
 双击根目录的 **build.bat**，或手动执行：

@@ -34,19 +34,35 @@ public static class BackupService
     /// <summary>立即备份，返回备份文件路径。</summary>
     public static string DoBackup(string dataDir)
     {
-        var src = Path.Combine(dataDir, "data.db");
         var dir = BackupDir(dataDir);
         Directory.CreateDirectory(dir);
         var dst = Path.Combine(dir, "data_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".db");
-        using (var source = new SqliteConnection($"Data Source={src};Mode=ReadOnly"))
-        using (var dest = new SqliteConnection($"Data Source={dst}"))
-        {
-            source.Open();
-            dest.Open();
-            source.BackupDatabase(dest);
-        }
+        ExportDatabase(dataDir, dst);
         PruneOld(dir);
         return dst;
+    }
+
+    /// <summary>将运行中的数据库一致地导出到指定文件，包含尚未 checkpoint 的 WAL 记录。</summary>
+    public static void ExportDatabase(string dataDir, string filePath)
+    {
+        var src = Path.GetFullPath(Path.Combine(dataDir, "data.db"));
+        var dst = Path.GetFullPath(filePath);
+        if (string.Equals(src, dst, StringComparison.OrdinalIgnoreCase))
+            throw new IOException("导出位置不能是正在使用的数据库文件。");
+
+        using var source = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = src,
+            Mode = SqliteOpenMode.ReadOnly,
+        }.ToString());
+        using var dest = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = dst,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+        }.ToString());
+        source.Open();
+        dest.Open();
+        source.BackupDatabase(dest);
     }
 
     private static void PruneOld(string dir)

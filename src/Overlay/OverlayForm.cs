@@ -28,6 +28,8 @@ public sealed class OverlayForm : Form
     private readonly Button _btnDone;
     private readonly Button _btnSave;
     private readonly TableLayoutPanel _card;
+    private readonly Label _lblTitle;
+    private readonly Label _lblHint;
     private readonly Panel _logPanelOuter;
     private readonly FlowLayoutPanel _logFlow;
     private readonly Dictionary<string, Button> _tagButtons = new();
@@ -94,6 +96,7 @@ public sealed class OverlayForm : Form
             AutoSize = true,
             Margin = new Padding(0, 0, 0, 10),
         };
+        _lblTitle = lblTitle;
 
         // 倒计时（M2-5）
         var countdownRow = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2 };
@@ -218,6 +221,7 @@ public sealed class OverlayForm : Form
             ForeColor = Color.FromArgb(140, 140, 150),
             Margin = new Padding(0, 8, 0, 0),
         };
+        _lblHint = lblHint;
 
         card.Controls.Add(lblTitle);
         card.Controls.Add(countdownRow);
@@ -422,9 +426,19 @@ public sealed class OverlayForm : Form
         int S(int v) => (int)Math.Round(v * dpi / 96.0);
         // 高缩放小屏（如 1080p@200%，逻辑宽仅 960）下按本屏实际逻辑尺寸封顶，
         // 防止卡片越屏、底部按钮被裁掉
-        _card.MinimumSize = new Size(Math.Min(S(640), Math.Max(280, _screen.Bounds.Width - S(80))), 0);
-        _card.MaximumSize = new Size(0, Math.Max(S(320), _screen.Bounds.Height - S(40)));
+        var availableWidth = Math.Max(1, _screen.Bounds.Width - S(40));
+        var cardWidth = Math.Min(S(760), availableWidth);
+        var contentWidth = Math.Max(1, cardWidth - S(56));
+        _card.MinimumSize = new Size(Math.Min(S(640), cardWidth), 0);
+        _card.MaximumSize = new Size(cardWidth, Math.Max(1, _screen.Bounds.Height - S(40)));
         _card.Padding = new Padding(S(28), S(22), S(28), S(22));
+        _lblTitle.MaximumSize = new Size(contentWidth, 0);
+        _lblHint.MaximumSize = new Size(contentWidth, 0);
+        foreach (var button in _tagButtons.Values)
+        {
+            button.MaximumSize = new Size(Math.Max(1, contentWidth - S(100)), 0);
+            button.AutoEllipsis = true;
+        }
         _txtInput.Height = S(64);
         _logPanelOuter.Height = S(LogPanelHeight);
         _progress.Height = S(14);
