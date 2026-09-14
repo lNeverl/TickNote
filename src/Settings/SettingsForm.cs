@@ -6,7 +6,7 @@ namespace SedentaryReminder.Settings;
 /// 设置窗口（M5-5）：分五个页签——提醒 / 时间与时段 / 快捷标签 / 提示词模板 / 数据。
 /// 保存后写入数据目录 config.json 并即时生效。
 /// </summary>
-public sealed class SettingsForm : Form
+public sealed class SettingsForm : DpiForm
 {
     private readonly AppContext _app;
     private readonly AppConfig _config;

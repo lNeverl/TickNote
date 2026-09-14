@@ -21,15 +21,8 @@ public sealed class AppContext : ApplicationContext
     internal ReportService Reports = null!;
     internal TrayIcon Tray = null!;
 
-    public AppContext()
+    public AppContext(string dataDir)
     {
-        var dataDir = ResolveDataDir();
-        if (dataDir == null)
-        {
-            ExitThread();
-            return;
-        }
-
         // M0-8：数据目录自包含结构
         Directory.CreateDirectory(Path.Combine(dataDir, "exports"));
         Directory.CreateDirectory(Path.Combine(dataDir, "backup"));
@@ -42,7 +35,12 @@ public sealed class AppContext : ApplicationContext
         Reports = new ReportService(Config, Db);
 
         Overlay = new OverlayManager(Config, Db);
-        Overlay.Closed += action => Engine.NotifyOverlayClosed(action);
+        Overlay.Closed += action =>
+        {
+            Engine.NotifyOverlayClosed(action);
+            // 保存成功给用户一个确定的反馈（M3-1 即写即存）
+            if (Overlay.LastCloseSavedLog) Tray.ShowBalloon("已保存一条工作记录，可在“查看今日”中查看");
+        };
         Engine = new ReminderEngine(Config);
         Engine.FireRequested += cycleStart =>
         {
@@ -59,7 +57,7 @@ public sealed class AppContext : ApplicationContext
     }
 
     /// <summary>读取引导配置定位数据目录；缺失/失效时走首次向导（M0-1/M0-6）。</summary>
-    private static string? ResolveDataDir()
+    internal static string? ResolveDataDir()
     {
         var boot = BootConfig.Load();
         if (boot != null) return boot.DataDir;

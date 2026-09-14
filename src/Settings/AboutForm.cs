@@ -3,7 +3,7 @@ using System.Reflection;
 namespace SedentaryReminder.Settings;
 
 /// <summary>关于对话框（M5-7）：版本号、数据目录、打开数据目录。</summary>
-public sealed class AboutForm : Form
+public sealed class AboutForm : DpiForm
 {
     public AboutForm(string dataDir)
     {

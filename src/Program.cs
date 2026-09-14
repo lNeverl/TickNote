@@ -14,6 +14,11 @@ internal static class Program
         using var mutex = new Mutex(true, @"Local\SedentaryReminder.SingleInstance", out bool created);
         if (!created) return;
 
-        Application.Run(new AppContext());
+        // M0 引导在消息循环启动之前完成：用户点叉取消向导 = 直接干净退出，
+        // 不会留下无窗口空转的僵尸进程
+        var dataDir = AppContext.ResolveDataDir();
+        if (dataDir == null) return;
+
+        Application.Run(new AppContext(dataDir));
     }
 }

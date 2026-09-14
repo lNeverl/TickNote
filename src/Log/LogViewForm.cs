@@ -6,7 +6,7 @@ namespace SedentaryReminder.Log;
 /// 流水视图（M4-1）：按时间轴列出某一天的流水，可编辑、删除、补录。
 /// 托盘"查看今日"传入今天日期并锁定；"历史流水"允许用日期选择器查任意一天。
 /// </summary>
-public sealed class LogViewForm : Form
+public sealed class LogViewForm : DpiForm
 {
     private readonly AppContext _app;
     private readonly DateTimePicker _dtDate;

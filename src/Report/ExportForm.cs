@@ -3,7 +3,7 @@ namespace SedentaryReminder.Report;
 /// <summary>
 /// 原始数据导出（M4-7）：流水按日期范围导出 Markdown / CSV（不经过 AI 的原始备份）。
 /// </summary>
-public sealed class ExportForm : Form
+public sealed class ExportForm : DpiForm
 {
     private readonly AppContext _app;
     private readonly DateTimePicker _dtFrom;

@@ -6,7 +6,7 @@ namespace SedentaryReminder.Log;
 /// 手动补记 / 编辑流水（M3-6）：可补写内容并手改时间段。
 /// 传入已有条目时为编辑模式，否则新增一条 source=manual 的记录。
 /// </summary>
-public sealed class ManualEntryForm : Form
+public sealed class ManualEntryForm : DpiForm
 {
     private readonly Database _db;
     private readonly WorkLogEntry? _editing;

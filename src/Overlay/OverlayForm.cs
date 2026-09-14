@@ -4,8 +4,8 @@ namespace SedentaryReminder.Overlay;
 
 /// <summary>
 /// 单块屏幕上的全屏提醒窗体（M2）。深色半透明遮罩 + 居中卡片：
-/// 提醒文案、倒计时、输入框、快捷标签、今日流水（含一键续记）、三按钮。
-/// 布局全部用容器（H3），禁止绝对坐标。
+/// 提醒文案、倒计时、输入框、快捷标签（点选式）、今日流水（继续/删除）、保存按钮、三按钮。
+/// 布局全部用容器（H3），禁止绝对坐标；高 DPI 走 AutoScaleMode.None + ApplyDpiScale 手动缩放。
 /// </summary>
 public sealed class OverlayForm : Form
 {
@@ -15,7 +15,9 @@ public sealed class OverlayForm : Form
     private static readonly Color CardBack = Color.FromArgb(32, 32, 40);
     private static readonly Color CardFore = Color.FromArgb(235, 235, 240);
     private static readonly Color AccentGreen = Color.FromArgb(46, 125, 50);
+    private static readonly Color AccentBlue = Color.FromArgb(40, 90, 160);
     private static readonly Color TagBack = Color.FromArgb(58, 58, 72);
+    private static readonly Color TagSelected = Color.FromArgb(46, 125, 50);
 
     private readonly OverlayManager _manager;
     private readonly AppConfig _config;
@@ -24,8 +26,11 @@ public sealed class OverlayForm : Form
     private readonly Label _lblCountdown;
     private readonly ProgressBar _progress;
     private readonly Button _btnDone;
+    private readonly Button _btnSave;
     private readonly TableLayoutPanel _card;
     private readonly Panel _logPanelOuter;
+    private readonly FlowLayoutPanel _logFlow;
+    private readonly Dictionary<string, Button> _tagButtons = new();
     private readonly System.Windows.Forms.Timer _fadeTimer;
     private bool _suppressTextEvent;
 
@@ -114,29 +119,47 @@ public sealed class OverlayForm : Form
             BackColor = Color.FromArgb(22, 22, 28),
             ForeColor = CardFore,
             BorderStyle = BorderStyle.FixedSingle,
-            ScrollBars = ScrollBars.Vertical,
         };
-        _txtInput.Margin = new Padding(0, 0, 0, 8);
+        _txtInput.Margin = new Padding(0, 0, 0, 6);
         _txtInput.TextChanged += (_, _) =>
         {
             if (!_suppressTextEvent) _manager.OnInputChanged(this, _txtInput.Text);
         };
 
-        // M3-3 快捷标签：点击插入输入框光标处
+        // 标签行：左侧点选式标签（M3-3），右侧独立的“保存”按钮
+        var tagRow = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2 };
+        tagRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        tagRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var tagPanel = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
             AutoSize = true,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = true,
-            Margin = new Padding(0, 0, 0, 10),
         };
         foreach (var tag in config.Tags)
         {
             var b = MakeTagButton(tag);
-            b.Click += (_, _) => InsertTag(tag);
+            b.Click += (_, _) => _manager.OnTagToggled(tag);
             tagPanel.Controls.Add(b);
+            _tagButtons[tag] = b;
         }
+        _btnSave = new Button
+        {
+            Text = "保存",
+            AutoSize = true,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = AccentBlue,
+            ForeColor = Color.White,
+            Font = new Font(Font.FontFamily, 10F, FontStyle.Bold),
+            Margin = new Padding(4, 0, 0, 0),
+            Padding = new Padding(12, 2, 12, 2),
+            Anchor = AnchorStyles.Right | AnchorStyles.Top,
+        };
+        _btnSave.Click += (_, _) => _manager.OnSaveRequested();
+        tagRow.Controls.Add(tagPanel, 0, 0);
+        tagRow.Controls.Add(_btnSave, 1, 0);
+        tagRow.Margin = new Padding(0, 0, 0, 10);
 
         var lblToday = new Label
         {
@@ -146,10 +169,24 @@ public sealed class OverlayForm : Form
             Margin = new Padding(0, 0, 0, 4),
         };
 
-        // M2-9 今日流水面板 + M2-10 一键续记
-        var logPanel = BuildLogPanel(todayLogs);
-        logPanel.Margin = new Padding(0, 0, 0, 12);
-        _logPanelOuter = logPanel;
+        // M2-9 今日流水面板（继续 / 删除）
+        var outer = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Height = LogPanelHeight,
+            AutoScroll = true,
+            BackColor = Color.FromArgb(26, 26, 32),
+            Margin = new Padding(0, 0, 0, 12),
+        };
+        _logFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+        };
+        outer.Controls.Add(_logFlow);
+        _logPanelOuter = outer;
 
         // 三按钮（M2-6/7/8）
         var btnRow = new FlowLayoutPanel
@@ -159,7 +196,7 @@ public sealed class OverlayForm : Form
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
         };
-        _btnDone = MakeActionButton($"刚活动完", AccentGreen);
+        _btnDone = MakeActionButton("刚活动完", AccentGreen);
         _btnDone.Click += (_, _) => _manager.OnAction("done");
         var btnSkip = MakeActionButton("跳过", Color.FromArgb(90, 90, 100));
         btnSkip.Click += (_, _) => _manager.OnAction("skip");
@@ -169,17 +206,29 @@ public sealed class OverlayForm : Form
         btnRow.Controls.Add(btnSkip);
         btnRow.Controls.Add(btnPostpone);
 
+        // 避免误解：倒计时只是建议，三个按钮都立即关窗，不用等
+        var lblHint = new Label
+        {
+            Text = "倒计时只是建议，不用等它走完——刚活动过就点「刚活动完」立即关窗，开始下一周期。",
+            AutoSize = true,
+            ForeColor = Color.FromArgb(140, 140, 150),
+            Margin = new Padding(0, 8, 0, 0),
+        };
+
         card.Controls.Add(lblTitle);
         card.Controls.Add(countdownRow);
         card.Controls.Add(lblInput);
         card.Controls.Add(_txtInput);
-        card.Controls.Add(tagPanel);
+        card.Controls.Add(tagRow);
         card.Controls.Add(lblToday);
-        card.Controls.Add(logPanel);
+        card.Controls.Add(outer);
         card.Controls.Add(btnRow);
+        card.Controls.Add(lblHint);
 
         center.Controls.Add(card, 1, 1);
         Controls.Add(center);
+
+        RefreshLogs(todayLogs);
 
         // M2-14 淡入 200ms
         _fadeTimer = new System.Windows.Forms.Timer { Interval = 20 };
@@ -191,31 +240,20 @@ public sealed class OverlayForm : Form
         _fadeTimer.Start();
     }
 
-    private Panel BuildLogPanel(List<WorkLogEntry> logs)
+    /// <summary>重建今日流水列表（保存/删除后由管理器调用，所有屏同步刷新）。</summary>
+    public void RefreshLogs(List<WorkLogEntry> logs)
     {
-        var outer = new Panel
-        {
-            Dock = DockStyle.Fill,
-            Height = LogPanelHeight,
-            AutoScroll = true,
-            BackColor = Color.FromArgb(26, 26, 32),
-        };
-        var flow = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Top,
-            AutoSize = true,
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false,
-        };
+        _logFlow.Controls.Clear();
         if (logs.Count == 0)
         {
-            flow.Controls.Add(new Label
+            _logFlow.Controls.Add(new Label
             {
                 Text = "（今天还没有记录）",
                 AutoSize = true,
                 ForeColor = Color.FromArgb(120, 120, 130),
                 Margin = new Padding(6),
             });
+            return;
         }
         foreach (var log in logs)
         {
@@ -226,9 +264,9 @@ public sealed class OverlayForm : Form
                 WrapContents = false,
                 Margin = new Padding(2),
             };
-            var text = $"{log.EndTime ?? log.StartTime ?? "--:--"}";
+            var text = log.EndTime ?? log.StartTime ?? "--:--";
             if (log.Tag is { Length: > 0 }) text += $" [{log.Tag}]";
-            text += " " + Truncate(log.Content ?? "", 28);
+            text += " " + Truncate(log.Content ?? "", 24);
             row.Controls.Add(new Label
             {
                 Text = text,
@@ -236,24 +274,28 @@ public sealed class OverlayForm : Form
                 ForeColor = CardFore,
                 Margin = new Padding(6, 7, 6, 3),
             });
-            var btnContinue = new Button
-            {
-                Text = "继续",
-                AutoSize = true,
-                FlatStyle = FlatStyle.Flat,
-                BackColor = TagBack,
-                ForeColor = CardFore,
-                Margin = new Padding(2),
-                Padding = new Padding(4, 0, 4, 0),
-            };
             var captured = log;
+            var btnContinue = MakeRowButton("继续");
             btnContinue.Click += (_, _) => _manager.OnContinueRequested(captured);
+            var btnDelete = MakeRowButton("删除");
+            btnDelete.ForeColor = Color.FromArgb(240, 160, 160);
+            btnDelete.Click += (_, _) => _manager.OnDeleteRequested(captured);
             row.Controls.Add(btnContinue);
-            flow.Controls.Add(row);
+            row.Controls.Add(btnDelete);
+            _logFlow.Controls.Add(row);
         }
-        outer.Controls.Add(flow);
-        return outer;
     }
+
+    private static Button MakeRowButton(string text) => new()
+    {
+        Text = text,
+        AutoSize = true,
+        FlatStyle = FlatStyle.Flat,
+        BackColor = TagBack,
+        ForeColor = CardFore,
+        Margin = new Padding(2),
+        Padding = new Padding(4, 0, 4, 0),
+    };
 
     private static string Truncate(string s, int max)
     {
@@ -295,6 +337,20 @@ public sealed class OverlayForm : Form
         _suppressTextEvent = false;
     }
 
+    /// <summary>点选式标签：更新本屏所有标签按钮的选中高亮。</summary>
+    public void SetSelectedTag(string? selectedTag)
+    {
+        foreach (var (tag, btn) in _tagButtons)
+            btn.BackColor = tag == selectedTag ? TagSelected : TagBack;
+    }
+
+    /// <summary>保存按钮状态（冷却倒计时由管理器统一驱动，各屏一致）。</summary>
+    public void SetSaveButton(bool enabled, string text)
+    {
+        _btnSave.Enabled = enabled;
+        _btnSave.Text = text;
+    }
+
     public void UpdateCountdown(int remainingSec, int totalSec)
     {
         _lblCountdown.Text = $"{remainingSec / 60:D2}:{remainingSec % 60:D2}";
@@ -302,7 +358,7 @@ public sealed class OverlayForm : Form
         _progress.Value = Math.Clamp(totalSec - remainingSec, 0, _progress.Maximum);
     }
 
-    /// <summary>M2-11：倒计时结束高亮"刚活动完"。</summary>
+    /// <summary>M2-11：倒计时结束不关窗、不自动保存，只高亮“刚活动完”。</summary>
     public void OnCountdownFinished()
     {
         _btnDone.BackColor = Color.FromArgb(76, 175, 80);
@@ -312,16 +368,6 @@ public sealed class OverlayForm : Form
     public void FocusInput()
     {
         BeginInvoke(() => { Activate(); _txtInput.Focus(); });
-    }
-
-    private void InsertTag(string tag)
-    {
-        var insert = $"[{tag}] ";
-        var pos = _txtInput.SelectionStart;
-        _txtInput.Text = _txtInput.Text.Insert(pos, insert);
-        _txtInput.SelectionStart = pos + insert.Length;
-        _txtInput.Focus();
-        // Text 赋值已触发 TextChanged → 同步到其他屏
     }
 
     protected override void OnKeyDown(KeyEventArgs e)

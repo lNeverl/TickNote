@@ -6,7 +6,7 @@ namespace SedentaryReminder.Report;
 /// 报告视图（M4-2/M4-6）：按日/周归档展示已保存的日报/周报，
 /// 可查看、再编辑、一键复制全文去提交，可"重新复制提示词+最新数据"再走一遍 AI 流程。
 /// </summary>
-public sealed class ReportViewForm : Form
+public sealed class ReportViewForm : DpiForm
 {
     private readonly AppContext _app;
     private readonly ListBox _list;

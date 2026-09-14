@@ -6,7 +6,7 @@ namespace SedentaryReminder.Report;
 /// 粘贴回导入（M4-5）：把 AI 生成的日报/周报整段粘贴进来，保存到 report 表并写 exports\ 副本；
 /// 同期已有报告时提示"覆盖/保留两份"。
 /// </summary>
-public sealed class ImportReportForm : Form
+public sealed class ImportReportForm : DpiForm
 {
     private readonly AppContext _app;
     private readonly RadioButton _rbDaily;
