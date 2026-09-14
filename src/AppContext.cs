@@ -1,14 +1,16 @@
 using Microsoft.Win32;
 using SedentaryReminder.Data;
+using SedentaryReminder.Log;
 using SedentaryReminder.Overlay;
 using SedentaryReminder.Reminder;
+using SedentaryReminder.Report;
 using SedentaryReminder.Settings;
 
 namespace SedentaryReminder;
 
 /// <summary>
 /// 应用主上下文：M0 引导（数据目录定位/向导）、配置与数据库加载、自动备份，
-/// 并挂接 M1 提醒引擎、M2 全屏弹窗与 M5 托盘。
+/// 并挂接 M1 提醒引擎、M2 全屏弹窗、M4 报告服务与 M5 托盘。
 /// </summary>
 public sealed class AppContext : ApplicationContext
 {
@@ -16,7 +18,8 @@ public sealed class AppContext : ApplicationContext
     internal Database Db = null!;
     internal ReminderEngine Engine = null!;
     internal OverlayManager Overlay = null!;
-    private NotifyIcon _tray = null!;
+    internal ReportService Reports = null!;
+    internal TrayIcon Tray = null!;
 
     public AppContext()
     {
@@ -34,13 +37,12 @@ public sealed class AppContext : ApplicationContext
         Config = AppConfig.Load(dataDir);
         Db = new Database(dataDir);
         BackupService.AutoBackupOnStartup(dataDir); // M6-4 每天首次启动自动备份
+        AutoStart.EnsurePathCurrent(Config.AutoStart); // M5-4 EXE 路径变化自动修正
+
+        Reports = new ReportService(Config, Db);
 
         Overlay = new OverlayManager(Config, Db);
-        Overlay.Closed += action =>
-        {
-            Engine.NotifyOverlayClosed(action);
-            // 关窗后今日流水可能新增，无其他界面需要即时刷新
-        };
+        Overlay.Closed += action => Engine.NotifyOverlayClosed(action);
         Engine = new ReminderEngine(Config);
         Engine.FireRequested += cycleStart =>
         {
@@ -52,7 +54,7 @@ public sealed class AppContext : ApplicationContext
         SystemEvents.SessionSwitch += OnSessionSwitch;
         SystemEvents.DisplaySettingsChanged += (_, _) => Overlay.OnDisplaySettingsChanged();
 
-        BuildTray();
+        Tray = new TrayIcon(this);
         Engine.Start();
     }
 
@@ -76,24 +78,86 @@ public sealed class AppContext : ApplicationContext
         else if (e.Reason == SessionSwitchReason.SessionUnlock) Engine.SetLocked(false);
     }
 
-    private void BuildTray()
+    // ---------------- 托盘菜单动作 ----------------
+
+    internal void ShowLogView(DateTime? fixedDate)
+        => new LogViewForm(this, fixedDate).Show();
+
+    internal void ShowManualEntry()
     {
-        var menu = new ContextMenuStrip();
-        menu.Items.Add("退出", null, (_, _) => ExitApplication());
-        _tray = new NotifyIcon
-        {
-            Text = "久坐提醒",
-            Icon = SystemIcons.Information,
-            Visible = true,
-            ContextMenuStrip = menu,
-        };
+        using var f = new ManualEntryForm(Db, Config);
+        f.ShowDialog();
+    }
+
+    internal void ShowReportView()
+        => new ReportViewForm(this).Show();
+
+    internal void CopyDailyPrompt()
+    {
+        Clipboard.SetText(Reports.BuildDailyPrompt(DateTime.Today));
+        Tray.ShowBalloon("日报提示词+今日流水已复制，请直接粘贴给 AI");
+    }
+
+    internal void CopyWeeklyPrompt()
+    {
+        Clipboard.SetText(Reports.BuildWeeklyPrompt(DateTime.Today));
+        Tray.ShowBalloon("周报提示词+本周数据已复制，请直接粘贴给 AI");
+    }
+
+    internal void ShowImportReport()
+    {
+        using var f = new ImportReportForm(this);
+        f.ShowDialog();
+    }
+
+    internal void ShowExport()
+    {
+        using var f = new ExportForm(this);
+        f.ShowDialog();
+    }
+
+    internal void ShowSettings()
+    {
+        using var f = new SettingsForm(this);
+        f.ShowDialog();
+    }
+
+    internal void ShowAbout()
+    {
+        using var f = new AboutForm(Config.DataDir);
+        f.ShowDialog();
+    }
+
+    internal void PauseReminder(TimeSpan duration)
+    {
+        Engine.PauseUntil(DateTime.Now.Add(duration));
+        Tray.ShowBalloon($"已暂停提醒，{DateTime.Now.Add(duration):HH:mm} 自动恢复");
+    }
+
+    internal void PauseReminderToday()
+    {
+        Engine.PauseRestOfToday();
+        Tray.ShowBalloon("已暂停提醒到今天下班");
+    }
+
+    internal void ResumeReminder()
+    {
+        Engine.ResumeFromPause();
+        Tray.ShowBalloon("已恢复提醒");
+    }
+
+    internal void RestartApplication()
+    {
+        Engine.Stop();
+        Tray.Dispose();
+        System.Windows.Forms.Application.Restart();
+        ExitThread();
     }
 
     internal void ExitApplication()
     {
         Engine.Stop();
-        _tray.Visible = false;
-        _tray.Dispose();
+        Tray.Dispose();
         ExitThread();
     }
 
