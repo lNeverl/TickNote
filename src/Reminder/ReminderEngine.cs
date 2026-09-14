@@ -132,7 +132,8 @@ public sealed class ReminderEngine
             return (EngineTrayState.Idle, $"启动缓冲中，{delayEnd:HH:mm} 开始计时");
 
         var min = (int)Math.Ceiling(_remainingSec / 60.0);
-        return min < 5
+        // M5-3：距弹窗 < 5 分钟图标变黄
+        return _remainingSec < 300
             ? (EngineTrayState.Soon, $"距下次提醒约 {min} 分钟")
             : (EngineTrayState.Counting, $"距下次提醒约 {min} 分钟");
     }

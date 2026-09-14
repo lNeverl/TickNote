@@ -19,6 +19,7 @@ public sealed class OverlayForm : Form
 
     private readonly OverlayManager _manager;
     private readonly AppConfig _config;
+    private readonly Screen _screen;
     private readonly TextBox _txtInput;
     private readonly Label _lblCountdown;
     private readonly ProgressBar _progress;
@@ -32,6 +33,7 @@ public sealed class OverlayForm : Form
     {
         _manager = manager;
         _config = config;
+        _screen = screen;
         IsPrimary = screen.Primary;
 
         FormBorderStyle = FormBorderStyle.None;
@@ -324,6 +326,20 @@ public sealed class OverlayForm : Form
             e.Handled = true;
             _manager.OnAction("postpone");
         }
+    }
+
+    // PerMonitorV2 下构造函数里设的 Bounds 会被"初次自动缩放"按 DPI 比例再次放大，
+    // 导致窗体超出屏幕、卡片偏移；显示后与 DPI 变化后都把边界强制收回本屏（N10/M2-15）。
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        Bounds = _screen.Bounds;
+    }
+
+    protected override void OnDpiChanged(DpiChangedEventArgs e)
+    {
+        base.OnDpiChanged(e);
+        BeginInvoke(() => Bounds = _screen.Bounds);
     }
 
     protected override void Dispose(bool disposing)
