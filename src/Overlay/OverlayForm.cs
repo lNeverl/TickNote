@@ -24,6 +24,8 @@ public sealed class OverlayForm : Form
     private readonly Label _lblCountdown;
     private readonly ProgressBar _progress;
     private readonly Button _btnDone;
+    private readonly TableLayoutPanel _card;
+    private readonly Panel _logPanelOuter;
     private readonly System.Windows.Forms.Timer _fadeTimer;
     private bool _suppressTextEvent;
 
@@ -36,6 +38,9 @@ public sealed class OverlayForm : Form
         _screen = screen;
         IsPrimary = screen.Primary;
 
+        // 高 DPI 关键：关闭框架自动缩放（它会把设好的 Bounds 按 DPI 比例二次放大导致越屏），
+        // 改为 Bounds 永远精确等于本屏逻辑尺寸，布局尺寸在 ApplyDpiScale 里按 DeviceDpi 手动缩放。
+        AutoScaleMode = AutoScaleMode.None;
         FormBorderStyle = FormBorderStyle.None;
         Bounds = screen.Bounds;
         StartPosition = FormStartPosition.Manual;
@@ -71,6 +76,7 @@ public sealed class OverlayForm : Form
             ColumnCount = 1,
             Anchor = AnchorStyles.None,
         };
+        _card = card;
 
         // 标题（M2-4 文案可自定义）
         var lblTitle = new Label
@@ -143,6 +149,7 @@ public sealed class OverlayForm : Form
         // M2-9 今日流水面板 + M2-10 一键续记
         var logPanel = BuildLogPanel(todayLogs);
         logPanel.Margin = new Padding(0, 0, 0, 12);
+        _logPanelOuter = logPanel;
 
         // 三按钮（M2-6/7/8）
         var btnRow = new FlowLayoutPanel
@@ -328,8 +335,16 @@ public sealed class OverlayForm : Form
         }
     }
 
-    // PerMonitorV2 下构造函数里设的 Bounds 会被"初次自动缩放"按 DPI 比例再次放大，
-    // 导致窗体超出屏幕、卡片偏移；显示后与 DPI 变化后都把边界强制收回本屏（N10/M2-15）。
+    // PerMonitorV2 高 DPI 适配（N10/M2-15）：
+    // AutoScaleMode.None 下框架不再改动窗体尺寸，Bounds 恒等于本屏逻辑边界；
+    // 结构性像素尺寸（卡片宽、内边距、输入框/流水面板/进度条高）按本屏 DPI 手动等比放大，
+    // 字体用"磅"为单位，本身随 DPI 物理缩放，无需处理。100%/125%/150%/200% 行为一致。
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        ApplyDpiScale();
+    }
+
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
@@ -339,7 +354,20 @@ public sealed class OverlayForm : Form
     protected override void OnDpiChanged(DpiChangedEventArgs e)
     {
         base.OnDpiChanged(e);
-        BeginInvoke(() => Bounds = _screen.Bounds);
+        ApplyDpiScale(e.DeviceDpiNew);
+        Bounds = _screen.Bounds;
+    }
+
+    private void ApplyDpiScale() => ApplyDpiScale(DeviceDpi);
+
+    private void ApplyDpiScale(int dpi)
+    {
+        int S(int v) => (int)Math.Round(v * dpi / 96.0);
+        _card.MinimumSize = new Size(S(640), 0);
+        _card.Padding = new Padding(S(28), S(22), S(28), S(22));
+        _txtInput.Height = S(64);
+        _logPanelOuter.Height = S(LogPanelHeight);
+        _progress.Height = S(14);
     }
 
     protected override void Dispose(bool disposing)
