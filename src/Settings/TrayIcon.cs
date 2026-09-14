@@ -14,6 +14,7 @@ public sealed class TrayIcon : IDisposable
     private readonly Icon _gray;
     private readonly System.Windows.Forms.Timer _statusTimer;
     private string _lastStatus = "";
+    private EngineTrayState _lastState = EngineTrayState.Idle;
 
     public TrayIcon(AppContext app)
     {
@@ -67,8 +68,9 @@ public sealed class TrayIcon : IDisposable
     private void UpdateStatus()
     {
         var (state, text) = _app.Engine.GetStatus();
-        if (text == _lastStatus) return;
+        if (text == _lastStatus && state == _lastState) return;
         _lastStatus = text;
+        _lastState = state;
         _icon.Icon = state switch
         {
             EngineTrayState.Counting => _green,

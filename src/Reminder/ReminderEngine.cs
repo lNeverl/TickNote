@@ -152,6 +152,7 @@ public sealed class ReminderEngine
             if (now >= pu)
             {
                 _userPauseUntil = null;
+                _postponeAt = null; // 暂停覆盖了未生效的推迟，恢复后直接开始新周期
                 ResetCycle();
                 RaiseStatus();
             }

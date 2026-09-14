@@ -92,14 +92,28 @@ public sealed class AppContext : ApplicationContext
 
     internal void CopyDailyPrompt()
     {
-        Clipboard.SetText(Reports.BuildDailyPrompt(DateTime.Today));
-        Tray.ShowBalloon("日报提示词+今日流水已复制，请直接粘贴给 AI");
+        try
+        {
+            Clipboard.SetText(Reports.BuildDailyPrompt(DateTime.Today));
+            Tray.ShowBalloon("日报提示词+今日流水已复制，请直接粘贴给 AI");
+        }
+        catch (Exception ex)
+        {
+            Tray.ShowBalloon("复制失败，剪贴板被其他程序占用：" + ex.Message);
+        }
     }
 
     internal void CopyWeeklyPrompt()
     {
-        Clipboard.SetText(Reports.BuildWeeklyPrompt(DateTime.Today));
-        Tray.ShowBalloon("周报提示词+本周数据已复制，请直接粘贴给 AI");
+        try
+        {
+            Clipboard.SetText(Reports.BuildWeeklyPrompt(DateTime.Today));
+            Tray.ShowBalloon("周报提示词+本周数据已复制，请直接粘贴给 AI");
+        }
+        catch (Exception ex)
+        {
+            Tray.ShowBalloon("复制失败，剪贴板被其他程序占用：" + ex.Message);
+        }
     }
 
     internal void ShowImportReport()

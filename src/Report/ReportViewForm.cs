@@ -1,3 +1,4 @@
+using System.Globalization;
 using SedentaryReminder.Data;
 
 namespace SedentaryReminder.Report;
@@ -51,10 +52,15 @@ public sealed class ReportViewForm : DpiForm
         var btnCopyAll = new Button { Text = "复制全文（去提交）", AutoSize = true };
         btnCopyAll.Click += (_, _) =>
         {
-            if (_txtContent.Text.Length > 0)
+            if (_txtContent.Text.Length == 0) return;
+            try
             {
                 Clipboard.SetText(_txtContent.Text);
                 _app.Tray.ShowBalloon("报告全文已复制到剪贴板");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "复制失败，剪贴板被其他程序占用：" + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         };
         var btnRePrompt = new Button { Text = "重新复制提示词+最新数据", AutoSize = true };
@@ -85,6 +91,7 @@ public sealed class ReportViewForm : DpiForm
         foreach (var r in _reports)
             _list.Items.Add($"{(r.ReportType == "daily" ? "日报" : "周报")}  {r.PeriodKey}  #{r.Id}");
         if (_list.Items.Count > 0) _list.SelectedIndex = 0;
+        else _txtContent.Clear(); // 删空后清掉残留内容，避免"复制全文"复制到幽灵文本
     }
 
     private void ShowSelected()
@@ -112,11 +119,34 @@ public sealed class ReportViewForm : DpiForm
         }
         else
         {
-            var date = DateTime.TryParse(entry.PeriodKey[..10], out var d) ? d : DateTime.Today;
+            // PeriodKey 形如 2026-W38，解析回该周中的一天；失败则退到报告创建日期
+            var date = ParseWeekKey(entry.PeriodKey)
+                ?? (DateTime.TryParse(entry.CreatedAt, out var cd) ? cd : DateTime.Today);
             prompt = _app.Reports.BuildWeeklyPrompt(date);
         }
-        Clipboard.SetText(prompt);
-        _app.Tray.ShowBalloon("提示词+最新数据已复制，请粘贴给 AI 生成后再导入");
+        try
+        {
+            Clipboard.SetText(prompt);
+            _app.Tray.ShowBalloon("提示词+最新数据已复制，请粘贴给 AI 生成后再导入");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "复制失败，剪贴板被其他程序占用：" + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    /// <summary>把周报期次键（yyyy-Www，如 2026-W38）解析回该周的周一；无法解析返回 null。</summary>
+    private static DateTime? ParseWeekKey(string key)
+    {
+        var parts = key.Split('-');
+        if (parts.Length == 2 && parts[1].Length >= 2 && parts[1][0] == 'W'
+            && int.TryParse(parts[0], out var year) && int.TryParse(parts[1][1..], out var week)
+            && week is >= 1 and <= 53)
+        {
+            try { return ISOWeek.ToDateTime(year, week, DayOfWeek.Monday); }
+            catch { return null; }
+        }
+        return null;
     }
 
     private void DeleteSelected()

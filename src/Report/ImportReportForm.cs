@@ -66,7 +66,14 @@ public sealed class ImportReportForm : DpiForm
         var btnPaste = new Button { Text = "从剪贴板粘贴", AutoSize = true };
         btnPaste.Click += (_, _) =>
         {
-            if (Clipboard.ContainsText()) _txtContent.Text = Clipboard.GetText();
+            try
+            {
+                if (Clipboard.ContainsText()) _txtContent.Text = Clipboard.GetText();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "读取剪贴板失败，剪贴板被其他程序占用：" + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         };
         var btnCancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, AutoSize = true };
         btnRow.Controls.Add(btnSave);

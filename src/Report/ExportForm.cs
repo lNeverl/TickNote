@@ -56,6 +56,11 @@ public sealed class ExportForm : DpiForm
 
     private void OnExport(object? sender, EventArgs e)
     {
+        if (_dtFrom.Value.Date > _dtTo.Value.Date)
+        {
+            MessageBox.Show(this, "起始日期不能晚于结束日期。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
         var format = _rbCsv.Checked ? "csv" : "md";
         using var dlg = new SaveFileDialog
         {

@@ -32,6 +32,7 @@ public sealed class OverlayForm : Form
     private readonly FlowLayoutPanel _logFlow;
     private readonly Dictionary<string, Button> _tagButtons = new();
     private readonly System.Windows.Forms.Timer _fadeTimer;
+    private readonly List<Font> _fonts = new(); // 弹窗每天弹出十余次，字体必须随窗体释放（N1 内存硬指标）
     private bool _suppressTextEvent;
 
     public bool IsPrimary { get; }
@@ -54,7 +55,7 @@ public sealed class OverlayForm : Form
         BackColor = Color.Black;
         Opacity = 0;                    // M2-14 淡入
         KeyPreview = true;              // M2-13 ESC
-        Font = new Font("Microsoft YaHei UI", 10F);
+        Font = TrackFont(new Font("Microsoft YaHei UI", 10F));
 
         // —— 居中卡片：3x3 网格，中行中列放卡片，四周百分比留白 ——
         var center = new TableLayoutPanel
@@ -74,6 +75,7 @@ public sealed class OverlayForm : Form
         var card = new TableLayoutPanel
         {
             AutoSize = true,
+            AutoScroll = true, // 极端 DPI/小屏下内容超高时出滚动条，而不是把按钮裁没
             MinimumSize = new Size(640, 0),
             BackColor = CardBack,
             ForeColor = CardFore,
@@ -83,11 +85,12 @@ public sealed class OverlayForm : Form
         };
         _card = card;
 
-        // 标题（M2-4 文案可自定义）
+        // 标题（M2-4 文案可自定义）。用户自定义文案可能含花括号，string.Format 会抛异常，
+        // 只认 {0} 占位符做简单替换
         var lblTitle = new Label
         {
-            Text = string.Format(config.ReminderText, config.BreakMinutes),
-            Font = new Font(Font.FontFamily, 15F, FontStyle.Bold),
+            Text = config.ReminderText.Replace("{0}", config.BreakMinutes.ToString()),
+            Font = TrackFont(new Font(Font.FontFamily, 15F, FontStyle.Bold)),
             AutoSize = true,
             Margin = new Padding(0, 0, 0, 10),
         };
@@ -98,7 +101,7 @@ public sealed class OverlayForm : Form
         countdownRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         _lblCountdown = new Label
         {
-            Font = new Font("Consolas", 16F, FontStyle.Bold),
+            Font = TrackFont(new Font("Consolas", 16F, FontStyle.Bold)),
             AutoSize = true,
             Anchor = AnchorStyles.Left,
             Margin = new Padding(0, 0, 14, 0),
@@ -151,7 +154,7 @@ public sealed class OverlayForm : Form
             FlatStyle = FlatStyle.Flat,
             BackColor = AccentBlue,
             ForeColor = Color.White,
-            Font = new Font(Font.FontFamily, 10F, FontStyle.Bold),
+            Font = TrackFont(new Font(Font.FontFamily, 10F, FontStyle.Bold)),
             Margin = new Padding(4, 0, 0, 0),
             Padding = new Padding(12, 2, 12, 2),
             Anchor = AnchorStyles.Right | AnchorStyles.Top,
@@ -196,11 +199,12 @@ public sealed class OverlayForm : Form
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
         };
-        _btnDone = MakeActionButton("刚活动完", AccentGreen);
+        var actionFont = TrackFont(new Font("Microsoft YaHei UI", 10F, FontStyle.Bold));
+        _btnDone = MakeActionButton("刚活动完", AccentGreen, actionFont);
         _btnDone.Click += (_, _) => _manager.OnAction("done");
-        var btnSkip = MakeActionButton("跳过", Color.FromArgb(90, 90, 100));
+        var btnSkip = MakeActionButton("跳过", Color.FromArgb(90, 90, 100), actionFont);
         btnSkip.Click += (_, _) => _manager.OnAction("skip");
-        var btnPostpone = MakeActionButton($"推迟{config.PostponeMinutes}分钟", Color.FromArgb(120, 90, 30));
+        var btnPostpone = MakeActionButton($"推迟{config.PostponeMinutes}分钟", Color.FromArgb(120, 90, 30), actionFont);
         btnPostpone.Click += (_, _) => _manager.OnAction("postpone");
         btnRow.Controls.Add(_btnDone);
         btnRow.Controls.Add(btnSkip);
@@ -314,17 +318,24 @@ public sealed class OverlayForm : Form
         Padding = new Padding(6, 1, 6, 1),
     };
 
-    private static Button MakeActionButton(string text, Color back) => new()
+    private static Button MakeActionButton(string text, Color back, Font font) => new()
     {
         Text = text,
         AutoSize = true,
         FlatStyle = FlatStyle.Flat,
         BackColor = back,
         ForeColor = Color.White,
-        Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
+        Font = font,
         Margin = new Padding(0, 0, 10, 0),
         Padding = new Padding(12, 4, 12, 4),
     };
+
+    /// <summary>登记本窗体创建的字体，Dispose 时统一释放。</summary>
+    private Font TrackFont(Font font)
+    {
+        _fonts.Add(font);
+        return font;
+    }
 
     // ---------------- 外部同步接口 ----------------
 
@@ -409,7 +420,10 @@ public sealed class OverlayForm : Form
     private void ApplyDpiScale(int dpi)
     {
         int S(int v) => (int)Math.Round(v * dpi / 96.0);
-        _card.MinimumSize = new Size(S(640), 0);
+        // 高缩放小屏（如 1080p@200%，逻辑宽仅 960）下按本屏实际逻辑尺寸封顶，
+        // 防止卡片越屏、底部按钮被裁掉
+        _card.MinimumSize = new Size(Math.Min(S(640), Math.Max(280, _screen.Bounds.Width - S(80))), 0);
+        _card.MaximumSize = new Size(0, Math.Max(S(320), _screen.Bounds.Height - S(40)));
         _card.Padding = new Padding(S(28), S(22), S(28), S(22));
         _txtInput.Height = S(64);
         _logPanelOuter.Height = S(LogPanelHeight);
@@ -418,7 +432,11 @@ public sealed class OverlayForm : Form
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) _fadeTimer.Dispose();
+        if (disposing)
+        {
+            _fadeTimer.Dispose();
+            foreach (var f in _fonts) f.Dispose();
+        }
         base.Dispose(disposing);
     }
 }

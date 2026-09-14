@@ -116,7 +116,7 @@ public sealed class SettingsForm : DpiForm
         _chkEsc = new CheckBox { Text = "弹窗中按 ESC = 推迟", AutoSize = true };
         grid.Controls.Add(_chkEsc);
 
-        _txtReminderText = new TextBox { Dock = DockStyle.Fill };
+        _txtReminderText = new TextBox { Width = 340 }; // MakeRow 会强制 Dock=Left，必须给足宽度
         grid.Controls.Add(MakeRow("提醒文案（{0}=活动时长）", _txtReminderText));
 
         page.Controls.Add(grid);
@@ -186,7 +186,7 @@ public sealed class SettingsForm : DpiForm
 
         layout.Controls.Add(new Label
         {
-            Text = "标签显示在提醒弹窗中，点击即插入输入框。",
+            Text = "标签显示在提醒弹窗中，点击选中作为该条记录的标签（再点一次取消）。",
             AutoSize = true,
             ForeColor = Color.Gray,
         }, 0, 2);
@@ -229,7 +229,7 @@ public sealed class SettingsForm : DpiForm
         var page = new TabPage("数据");
         var grid = MakeGrid();
 
-        _lblDataDir = new Label { Text = "", AutoSize = true };
+        _lblDataDir = new Label { Text = "", AutoSize = true, MaximumSize = new Size(380, 0) }; // 长路径换行，不被裁
         grid.Controls.Add(MakeRow("当前数据目录", _lblDataDir));
 
         var btnChange = new Button { Text = "更换数据位置…", AutoSize = true };

@@ -30,6 +30,7 @@ public sealed class AboutForm : DpiForm
         {
             Text = "数据目录：" + dataDir,
             AutoSize = true,
+            MaximumSize = new Size(388, 0), // 长路径换行显示，不被窗口右缘裁掉
             Margin = new Padding(0, 0, 0, 14),
         });
 

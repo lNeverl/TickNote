@@ -12,7 +12,14 @@ internal static class Program
 
         // 单实例：避免两个进程同时写同一个 data.db
         using var mutex = new Mutex(true, @"Local\SedentaryReminder.SingleInstance", out bool created);
-        if (!created) return;
+        if (!created)
+        {
+            // 重启场景（如更换数据目录后 Application.Restart）：新进程启动时旧进程
+            // 可能尚未完全退出，短暂等待接管互斥体，避免"重启后程序直接消失"
+            try { created = mutex.WaitOne(TimeSpan.FromSeconds(10)); }
+            catch (AbandonedMutexException) { created = true; }
+            if (!created) return;
+        }
 
         // M0 引导在消息循环启动之前完成：用户点叉取消向导 = 直接干净退出，
         // 不会留下无窗口空转的僵尸进程
