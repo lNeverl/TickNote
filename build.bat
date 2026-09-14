@@ -19,7 +19,8 @@ if errorlevel 1 (
 echo [1/2] Publishing...
 
 rem If the app is running from dist\, the EXE is locked and publish will fail.
-tasklist /FI "IMAGENAME eq SedentaryReminder.exe" 2>nul | find /I "SedentaryReminder.exe" >nul
+rem Use findstr (not find) so this works even when a GNU toolchain shadows find.exe in PATH.
+tasklist /FI "IMAGENAME eq SedentaryReminder.exe" 2>nul | findstr /I /C:"SedentaryReminder.exe" >nul
 if not errorlevel 1 (
     echo [WARN] SedentaryReminder.exe is currently running, the output file is locked.
     echo        Please right-click the tray icon and choose "Exit" first,
