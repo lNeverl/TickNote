@@ -39,6 +39,20 @@ public abstract class DpiForm : Form
         ApplyDpi(e.DeviceDpiNew);
     }
 
+    // 高 DPI 小屏（如 1080p@200%，逻辑高仅 540）下窗口可能比屏幕还高/宽：
+    // 尺寸封顶到工作区，并保证整个窗口落在工作区内——否则居中后上下超出屏幕，
+    // 底部按钮行直接被挤出可视区（"导入报告按钮在框外"、"我的报告大到要拖"的根因）。
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        var work = Screen.FromControl(this).WorkingArea;
+        if (Width > work.Width || Height > work.Height)
+            Size = new Size(Math.Min(Width, work.Width), Math.Min(Height, work.Height));
+        var x = Math.Clamp(Left, work.Left, Math.Max(work.Left, work.Right - Width));
+        var y = Math.Clamp(Top, work.Top, Math.Max(work.Top, work.Bottom - Height));
+        Location = new Point(x, y);
+    }
+
     private void ApplyDpi(int dpi)
     {
         if (dpi <= 0 || dpi == _appliedDpi)

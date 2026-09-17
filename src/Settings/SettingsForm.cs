@@ -423,13 +423,4 @@ public sealed class SettingsForm : DpiForm
         MessageBox.Show(this, "数据位置已更换，软件将重启。", "完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
         _app.RestartApplication();
     }
-
-    protected override void OnShown(EventArgs e)
-    {
-        base.OnShown(e);
-        var work = Screen.FromControl(this).WorkingArea;
-        Size = new Size(Math.Min(Width, work.Width), Math.Min(Height, work.Height));
-        Location = new Point(work.Left + (work.Width - Width) / 2,
-            work.Top + (work.Height - Height) / 2);
-    }
 }
