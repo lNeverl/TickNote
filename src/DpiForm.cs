@@ -4,11 +4,12 @@ namespace SedentaryReminder;
 /// 高 DPI 窗体基类。不依赖框架自动缩放——在"系统 DPI 与显示器 DPI 不一致"等场景下
 /// （如缩放后未重新登录、远程/虚拟显示器），框架的初始缩放会静默失效导致布局被裁。
 /// 改为：句柄创建后按窗口实际 DeviceDpi 手动等比缩放一次，DPI 变化时按比例再缩放。
-/// 字体随 Scale 一并缩放，AutoSize 控件按缩放后字体重新测量，行为与正确自动缩放一致。
+/// 字体使用磅值，在新的设备 DPI 下自然按物理尺寸渲染；控件边界由 Scale 等比调整。
 /// </summary>
 public abstract class DpiForm : Form
 {
     private int _appliedDpi = 96;
+    private bool _initialPositionApplied;
 
     private static Icon? _appIcon;
 
@@ -30,22 +31,31 @@ public abstract class DpiForm : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        ApplyDpi(DeviceDpi);
+        ApplyDpi(DeviceDpi, scaleForm: true);
         // CenterScreen 的居中在句柄创建时按缩放前的小尺寸计算，ApplyDpi 放大窗口后会偏右下；
-        // 按缩放后的实际尺寸重新居中（仅初次创建时做，DPI 变化不抢用户的窗口位置）
-        if (StartPosition == FormStartPosition.CenterScreen)
+        // 按缩放后的实际尺寸重新居中。句柄可能重建，因此用标记确保只在首次创建时执行，
+        // 避免用户移动窗口后因句柄重建又被拉回屏幕中央。
+        if (!_initialPositionApplied)
         {
-            var work = Screen.FromControl(this).WorkingArea;
-            Location = new Point(
-                work.Left + Math.Max(0, (work.Width - Width) / 2),
-                work.Top + Math.Max(0, (work.Height - Height) / 2));
+            _initialPositionApplied = true;
+            if (StartPosition == FormStartPosition.CenterScreen)
+            {
+                var work = Screen.FromControl(this).WorkingArea;
+                Location = new Point(
+                    work.Left + Math.Max(0, (work.Width - Width) / 2),
+                    work.Top + Math.Max(0, (work.Height - Height) / 2));
+            }
         }
     }
 
     protected override void OnDpiChanged(DpiChangedEventArgs e)
     {
+        // AutoScaleMode.None 只关闭子控件的自动布局缩放；Form.OnDpiChanged 仍会应用系统
+        // 建议的外层窗口 Bounds、字体和 MinimumSize/MaximumSize。让框架负责这些顶层属性，
+        // 本类随后只缩放子控件；若再对 Form 调用 Scale，外层窗口和尺寸约束就会被处理两次。
         base.OnDpiChanged(e);
-        ApplyDpi(e.DeviceDpiNew);
+        ApplyDpi(e.DeviceDpiNew, scaleForm: false);
+        KeepInsideWorkingArea();
     }
 
     // 高 DPI 小屏（如 1080p@200%，逻辑高仅 540）下窗口可能比屏幕还高/宽：
@@ -54,6 +64,11 @@ public abstract class DpiForm : Form
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
+        KeepInsideWorkingArea();
+    }
+
+    private void KeepInsideWorkingArea()
+    {
         var work = Screen.FromControl(this).WorkingArea;
         if (Width > work.Width || Height > work.Height)
             Size = new Size(Math.Min(Width, work.Width), Math.Min(Height, work.Height));
@@ -62,7 +77,11 @@ public abstract class DpiForm : Form
         Location = new Point(x, y);
     }
 
-    private void ApplyDpi(int dpi)
+    /// <summary>
+    /// 按当前已应用的 DPI 到目标 DPI 的比例缩放一次。初次创建缩放整个 Form；跨屏时
+    /// Form.OnDpiChanged 已处理顶层属性，因此只缩放子控件。protected 便于派生窗体回归验证。
+    /// </summary>
+    protected void ApplyDpi(int dpi, bool scaleForm)
     {
         if (dpi <= 0 || dpi == _appliedDpi)
         {
@@ -78,7 +97,15 @@ public abstract class DpiForm : Form
         SuspendLayout();
         try
         {
-            Scale(new SizeF(factor, factor));
+            if (scaleForm)
+            {
+                Scale(new SizeF(factor, factor));
+            }
+            else
+            {
+                foreach (Control child in Controls)
+                    child.Scale(new SizeF(factor, factor));
+            }
         }
         finally
         {
