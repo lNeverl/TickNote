@@ -21,6 +21,13 @@ public sealed class AppContext : ApplicationContext
     internal ReportService Reports = null!;
     internal TrayIcon Tray = null!;
 
+    // 非模态窗口单例：重复点菜单项时拉到前台，不再开新窗（两个窗口内容不一致会互相覆盖）
+    private LogViewForm? _logViewToday;
+    private LogViewForm? _logViewHistory;
+    private ReportViewForm? _reportView;
+    // 模态窗口单例：模态循环下托盘菜单仍可能触发菜单项
+    private readonly Dictionary<Type, Form> _openDialogs = new();
+
     public AppContext(string dataDir)
     {
         // M0-8：数据目录自包含结构
@@ -78,17 +85,42 @@ public sealed class AppContext : ApplicationContext
 
     // ---------------- 托盘菜单动作 ----------------
 
-    internal void ShowLogView(DateTime? fixedDate)
-        => new LogViewForm(this, fixedDate).Show();
-
-    internal void ShowManualEntry()
+    /// <summary>已打开的窗口拉到前台（最小化先还原）；已关闭/未打开返回 false。</summary>
+    private static bool TryActivate(Form? form)
     {
-        using var f = new ManualEntryForm(Db, Config);
-        f.ShowDialog();
+        if (form is not { IsDisposed: false }) return false;
+        if (form.WindowState == FormWindowState.Minimized) form.WindowState = FormWindowState.Normal;
+        form.Activate();
+        return true;
     }
 
+    internal void ShowLogView(DateTime? fixedDate)
+    {
+        if (fixedDate.HasValue)
+        {
+            if (TryActivate(_logViewToday)) return;
+            _logViewToday = new LogViewForm(this, fixedDate);
+            _logViewToday.FormClosed += (_, _) => _logViewToday = null;
+            _logViewToday.Show();
+        }
+        else
+        {
+            if (TryActivate(_logViewHistory)) return;
+            _logViewHistory = new LogViewForm(this, null);
+            _logViewHistory.FormClosed += (_, _) => _logViewHistory = null;
+            _logViewHistory.Show();
+        }
+    }
+
+    internal void ShowManualEntry() => ShowDialogOnce(() => new ManualEntryForm(Db, Config));
+
     internal void ShowReportView()
-        => new ReportViewForm(this).Show();
+    {
+        if (TryActivate(_reportView)) return;
+        _reportView = new ReportViewForm(this);
+        _reportView.FormClosed += (_, _) => _reportView = null;
+        _reportView.Show();
+    }
 
     internal void CopyDailyPrompt()
     {
@@ -116,29 +148,23 @@ public sealed class AppContext : ApplicationContext
         }
     }
 
-    internal void ShowImportReport()
+    /// <summary>模态窗口单例：已打开时拉到前台而不是再开一个。</summary>
+    private void ShowDialogOnce<T>(Func<T> create) where T : Form
     {
-        using var f = new ImportReportForm(this);
-        f.ShowDialog();
+        if (_openDialogs.TryGetValue(typeof(T), out var existing) && TryActivate(existing)) return;
+        using var f = create();
+        _openDialogs[typeof(T)] = f;
+        try { f.ShowDialog(); }
+        finally { _openDialogs.Remove(typeof(T)); }
     }
 
-    internal void ShowExport()
-    {
-        using var f = new ExportForm(this);
-        f.ShowDialog();
-    }
+    internal void ShowImportReport() => ShowDialogOnce(() => new ImportReportForm(this));
 
-    internal void ShowSettings()
-    {
-        using var f = new SettingsForm(this);
-        f.ShowDialog();
-    }
+    internal void ShowExport() => ShowDialogOnce(() => new ExportForm(this));
 
-    internal void ShowAbout()
-    {
-        using var f = new AboutForm(Config.DataDir);
-        f.ShowDialog();
-    }
+    internal void ShowSettings() => ShowDialogOnce(() => new SettingsForm(this));
+
+    internal void ShowAbout() => ShowDialogOnce(() => new AboutForm(Config.DataDir));
 
     internal void PauseReminder(TimeSpan duration)
     {

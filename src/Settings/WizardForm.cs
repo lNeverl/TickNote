@@ -23,10 +23,8 @@ public sealed class WizardForm : DpiForm
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        // 不设固定 ClientSize：窗口严格贴合内容，按钮紧跟内容下方，不会出现大片空白
-        AutoSize = true;
-        AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        MinimumSize = new Size(500, 0); // 宽度下限（DpiForm 会按 DPI 比率缩放它）
+        // 固定紧凑尺寸：AutoSize 窗口经 DPI 缩放后收缩失败会留下大片空白，按钮被顶到远处
+        ClientSize = new Size(560, 340);
         Font = new Font("Microsoft YaHei UI", 9F);
 
         var root = new TableLayoutPanel
@@ -35,9 +33,12 @@ public sealed class WizardForm : DpiForm
             Padding = new Padding(16),
             ColumnCount = 1,
             RowCount = 8,
-            AutoSize = true,
         };
+        // 必须显式给 ColumnStyles：缺省时 DpiForm.Scale 后列宽按内容错乱计算，子控件溢出窗口右缘
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         for (var i = 0; i < 8; i++) root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        // 提示行吸收多余高度：无论窗口多高，按钮行都紧跟内容贴底，不出现中间大空白
+        root.RowStyles[6] = new RowStyle(SizeType.Percent, 100);
 
         var lblTitle = new Label
         {
@@ -59,7 +60,7 @@ public sealed class WizardForm : DpiForm
             Text = "便携模式：保存在软件目录下的 data 文件夹（整个文件夹拷到 U 盘/别的电脑即可继续使用）",
             AutoSize = true,
             Checked = true,
-            MaximumSize = new Size(460, 0), // 超长自动换行，不被右边缘裁掉
+            MaximumSize = new Size(520, 0), // 超长自动换行，不被右边缘裁掉
             Margin = new Padding(0, 0, 0, 2),
         };
 
@@ -79,7 +80,7 @@ public sealed class WizardForm : DpiForm
         {
             Text = "自定义目录：自己选择一个文件夹（如 D:\\我的数据 或 %APPDATA%）",
             AutoSize = true,
-            MaximumSize = new Size(460, 0),
+            MaximumSize = new Size(520, 0),
             Margin = new Padding(0, 0, 0, 4),
         };
 

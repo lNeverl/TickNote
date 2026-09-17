@@ -56,6 +56,8 @@ public sealed class SettingsForm : DpiForm
         MinimizeBox = false;
 
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        // 必须显式给 ColumnStyles：缺省时 DpiForm.Scale 后列宽按内容错乱计算，子控件溢出窗口右缘
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
@@ -155,6 +157,8 @@ public sealed class SettingsForm : DpiForm
     {
         var page = new TabPage("快捷标签");
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(10), ColumnCount = 1, RowCount = 3 };
+        // 必须显式给 ColumnStyles：缺省时 DpiForm.Scale 后列宽按内容错乱计算
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -199,6 +203,8 @@ public sealed class SettingsForm : DpiForm
     {
         var page = new TabPage("提示词模板");
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(10), ColumnCount = 1, RowCount = 5 };
+        // 必须显式给 ColumnStyles：缺省时 DpiForm.Scale 后列宽按内容错乱计算
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));

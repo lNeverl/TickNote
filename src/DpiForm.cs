@@ -62,8 +62,20 @@ public abstract class DpiForm : Form
         }
         var factor = dpi / (float)_appliedDpi;
         _appliedDpi = dpi;
-        Scale(new SizeF(factor, factor));
-        ScaleSizeConstraints(this, factor);
+        // 外层挂起布局：Scale 内部的 ResumeLayout 只会递减计数不会真正重排，
+        // 等 Min/Max 约束也缩放完后统一一次重排——否则 AutoSize 控件按"缩放后字体 +
+        // 未缩放约束"的中间态测量并残留（换行高度、溢出宽度都卡死在错误值）
+        SuspendLayout();
+        try
+        {
+            Scale(new SizeF(factor, factor));
+            ScaleSizeConstraints(this, factor);
+        }
+        finally
+        {
+            ResumeLayout(true);
+        }
+        PerformLayout();
     }
 
     // Control.Scale 不缩放 MaximumSize/MinimumSize，不补齐的话换行宽度等约束会和

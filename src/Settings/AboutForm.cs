@@ -18,34 +18,31 @@ public sealed class AboutForm : DpiForm
         var version = Assembly.GetExecutingAssembly()
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "1.0.0";
 
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 1 };
-        root.Controls.Add(new Label
+        // 固定坐标布局：DpiForm.Scale 对固定 Bounds 是纯乘法，任何 DPI 路径下都不会错乱
+        // （AutoSize + TableLayoutPanel 在 DPI 切换时会被中间态污染，小窗口不值得冒这个险）
+        var lblTitle = new Label
         {
             Text = $"TickNote（久坐提醒 + 工作流水记录）  v{version}",
             Font = new Font(Font.FontFamily, 11F, FontStyle.Bold),
-            AutoSize = true,
-            Margin = new Padding(0, 0, 0, 10),
-        });
-        root.Controls.Add(new Label
+            Bounds = new Rectangle(16, 14, 388, 22),
+        };
+        var lblPath = new Label
         {
             Text = "数据目录：" + dataDir,
-            AutoSize = true,
-            MaximumSize = new Size(388, 0), // 长路径换行显示，不被窗口右缘裁掉
-            Margin = new Padding(0, 0, 0, 14),
-        });
-
-        var btnRow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, AutoSize = true };
-        var btnOpen = new Button { Text = "打开数据目录", AutoSize = true };
+            ForeColor = SystemColors.GrayText,
+            Bounds = new Rectangle(16, 44, 388, 44), // 长路径在固定框内自动折行
+        };
+        var btnOpen = new Button { Text = "打开数据目录", Bounds = new Rectangle(16, 148, 120, 28) };
         btnOpen.Click += (_, _) =>
         {
             try { System.Diagnostics.Process.Start("explorer.exe", $"\"{dataDir}\""); } catch { }
         };
-        var btnOk = new Button { Text = "确定", DialogResult = DialogResult.OK, AutoSize = true };
-        btnRow.Controls.Add(btnOpen);
-        btnRow.Controls.Add(btnOk);
-        root.Controls.Add(btnRow);
+        var btnOk = new Button { Text = "确定", DialogResult = DialogResult.OK, Bounds = new Rectangle(318, 148, 86, 28) };
 
-        Controls.Add(root);
+        Controls.Add(lblTitle);
+        Controls.Add(lblPath);
+        Controls.Add(btnOpen);
+        Controls.Add(btnOk);
         AcceptButton = btnOk;
     }
 }

@@ -10,8 +10,8 @@
     <AssemblyName>TickNote</AssemblyName>
     <RootNamespace>SedentaryReminder</RootNamespace>
     <ApplicationIcon>Assets\TickNote.ico</ApplicationIcon>
-    <Version>1.0.0</Version>
-    <AssemblyInformationalVersion>1.0.0</AssemblyInformationalVersion>
+    <Version>1.0.1</Version>
+    <AssemblyInformationalVersion>1.0.1</AssemblyInformationalVersion>
     <InvariantGlobalization>true</InvariantGlobalization>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <DebugType>none</DebugType>

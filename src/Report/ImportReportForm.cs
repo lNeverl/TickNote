@@ -21,9 +21,12 @@ public sealed class ImportReportForm : DpiForm
         Text = "导入报告";
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(640, 520);
+        MinimumSize = new Size(560, 400); // 再小按钮行和日期行就挤不下了（DpiForm 会按 DPI 比率缩放它）
         Font = new Font("Microsoft YaHei UI", 9F);
 
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Padding = new Padding(12) };
+        // 必须显式给 ColumnStyles：缺省时 DpiForm.Scale 后列宽按内容错乱计算，按钮行溢出窗口右缘
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));

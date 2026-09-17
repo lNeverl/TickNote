@@ -21,6 +21,8 @@ public sealed class LogViewForm : DpiForm
         Font = new Font("Microsoft YaHei UI", 9F);
 
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(10) };
+        // 必须显式给 ColumnStyles：缺省时 DpiForm.Scale 后列宽按内容错乱计算，子控件溢出窗口右缘
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
