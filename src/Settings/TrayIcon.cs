@@ -3,25 +3,30 @@ using SedentaryReminder.Reminder;
 namespace SedentaryReminder.Settings;
 
 /// <summary>
-/// 系统托盘（M5-1/2/3）：常驻图标 + 完整右键菜单 + 状态图标（绿/黄/灰）与悬停文字。
+/// 系统托盘（M5-1/2/3）：常驻图标 + 完整右键菜单 + 状态颜色（绿/黄/灰）与悬停文字。
+/// 图标是软件 logo，外圈叠倒计时进度环：从 12 点方向顺时针填充，表示距下次提醒的进度，
+/// 环的颜色随状态变化（绿=计时中，黄=临近，灰=推迟中）；
+/// 暂停/锁屏/非工作时段等没有进行中倒计时的状态不画环，只显示 logo。
 /// </summary>
 public sealed class TrayIcon : IDisposable
 {
     private readonly AppContext _app;
     private readonly NotifyIcon _icon;
-    private readonly Icon _green;
-    private readonly Icon _yellow;
-    private readonly Icon _gray;
     private readonly System.Windows.Forms.Timer _statusTimer;
+    private readonly Bitmap? _logo;
+    private Icon? _currentIcon;
     private string _lastStatus = "";
     private EngineTrayState _lastState = EngineTrayState.Idle;
+    private int _lastProgressPct = -1;
+
+    private static readonly Color Green = Color.FromArgb(46, 160, 60);
+    private static readonly Color Yellow = Color.FromArgb(230, 180, 30);
+    private static readonly Color Gray = Color.FromArgb(150, 150, 150);
 
     public TrayIcon(AppContext app)
     {
         _app = app;
-        _green = MakeIcon(Color.FromArgb(46, 160, 60));
-        _yellow = MakeIcon(Color.FromArgb(230, 180, 30));
-        _gray = MakeIcon(Color.FromArgb(150, 150, 150));
+        _logo = LoadLogo();
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("查看今日", null, (_, _) => _app.ShowLogView(DateTime.Today));
@@ -50,61 +55,121 @@ public sealed class TrayIcon : IDisposable
 
         _icon = new NotifyIcon
         {
-            Text = "久坐提醒",
-            Icon = _green,
+            Text = "TickNote",
             Visible = true,
             ContextMenuStrip = menu,
         };
         _icon.DoubleClick += (_, _) => _app.ShowLogView(DateTime.Today);
 
         _app.Engine.StatusChanged += UpdateStatus;
-        _statusTimer = new System.Windows.Forms.Timer { Interval = 5000 };
+        _statusTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _statusTimer.Tick += (_, _) => UpdateStatus();
         _statusTimer.Start();
         UpdateStatus();
     }
 
-    /// <summary>M5-3：按引擎状态切换图标颜色与悬停文字。</summary>
+    /// <summary>M5-3：刷新悬停文字与图标（状态色 + 倒计时进度环）。</summary>
     private void UpdateStatus()
     {
         var (state, text) = _app.Engine.GetStatus();
-        if (text == _lastStatus && state == _lastState) return;
-        _lastStatus = text;
-        _lastState = state;
-        _icon.Icon = state switch
+        if (text != _lastStatus)
         {
-            EngineTrayState.Counting => _green,
-            EngineTrayState.Soon => _yellow,
-            _ => _gray,
+            _lastStatus = text;
+            // 托盘悬停文字上限 63 字符
+            _icon.Text = text.Length > 60 ? "TickNote\n" + text[..56] + "…" : "TickNote\n" + text;
+        }
+
+        // 进度量化到 1%，状态和进度都没变就不重绘，避免托盘图标闪烁
+        var progress = _app.Engine.GetCountdownProgress();
+        var pct = progress is double p ? (int)Math.Round(p * 100) : -1;
+        if (_currentIcon != null && state == _lastState && pct == _lastProgressPct) return;
+        _lastState = state;
+        _lastProgressPct = pct;
+        var color = state switch
+        {
+            EngineTrayState.Counting => Green,
+            EngineTrayState.Soon => Yellow,
+            _ => Gray,
         };
-        // 托盘悬停文字上限 63 字符
-        _icon.Text = text.Length > 60 ? "久坐提醒\n" + text[..56] + "…" : "久坐提醒\n" + text;
+        SwapIcon(MakeIcon(color, progress));
     }
 
     /// <summary>操作结果的气泡提示（如"提示词已复制"）。</summary>
     public void ShowBalloon(string message)
-        => _icon.ShowBalloonTip(2500, "久坐提醒", message, ToolTipIcon.Info);
+        => _icon.ShowBalloonTip(2500, "TickNote", message, ToolTipIcon.Info);
 
-    /// <summary>运行期生成纯色圆点图标，避免引入 .resx 资源（H2）。</summary>
-    private static Icon MakeIcon(Color color)
+    /// <summary>从嵌入资源读 logo 原图（SedentaryReminder.Assets.TickNote.png），供进度环图标叠画。</summary>
+    private static Bitmap? LoadLogo()
     {
-        using var bmp = new Bitmap(16, 16);
+        var s = typeof(TrayIcon).Assembly.GetManifestResourceStream("SedentaryReminder.Assets.TickNote.png");
+        return s != null ? new Bitmap(s) : null;
+    }
+
+    /// <summary>
+    /// 运行期绘制托盘图标：logo 居中；有倒计时进度时外圈加状态色进度环
+    /// （淡色整圈作底，实色弧从 12 点方向顺时针填充）。
+    /// </summary>
+    private Icon MakeIcon(Color ringColor, double? progress)
+    {
+        const int size = 32;
+        using var bmp = new Bitmap(size, size);
         using (var g = Graphics.FromImage(bmp))
         {
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            using var brush = new SolidBrush(color);
-            g.FillEllipse(brush, 1, 1, 14, 14);
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            if (progress is double p)
+            {
+                using var trackPen = new Pen(Color.FromArgb(70, ringColor), 4);
+                g.DrawEllipse(trackPen, 2, 2, size - 5, size - 5);
+                if (p > 0)
+                {
+                    using var arcPen = new Pen(ringColor, 4);
+                    g.DrawArc(arcPen, 2, 2, size - 5, size - 5, -90, (float)(p * 360));
+                }
+                if (_logo != null) g.DrawImage(_logo, 7, 7, size - 15, size - 15);
+            }
+            else if (_logo != null)
+            {
+                g.DrawImage(_logo, 1, 1, size - 2, size - 2);
+            }
+            else
+            {
+                // logo 资源缺失时退回纯色圆点
+                using var brush = new SolidBrush(ringColor);
+                g.FillEllipse(brush, 2, 2, size - 5, size - 5);
+            }
         }
         return Icon.FromHandle(bmp.GetHicon());
+    }
+
+    /// <summary>
+    /// 换图标。Icon.FromHandle 创建的句柄不归 Icon 对象所有，Dispose 不会释放它，
+    /// 必须 DestroyIcon，否则进度环每次重绘都会泄漏一个 GDI 句柄。
+    /// </summary>
+    private void SwapIcon(Icon next)
+    {
+        var old = _currentIcon;
+        _icon.Icon = next;
+        _currentIcon = next;
+        if (old == null) return;
+        var h = old.Handle;
+        old.Dispose();
+        NativeMethods.DestroyIcon(h);
     }
 
     public void Dispose()
     {
         _statusTimer.Dispose();
         _icon.Visible = false;
+        if (_currentIcon != null)
+        {
+            var h = _currentIcon.Handle;
+            _icon.Icon = null;
+            _currentIcon.Dispose();
+            NativeMethods.DestroyIcon(h);
+            _currentIcon = null;
+        }
         _icon.Dispose();
-        _green.Dispose();
-        _yellow.Dispose();
-        _gray.Dispose();
+        _logo?.Dispose();
     }
 }

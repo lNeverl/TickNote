@@ -139,6 +139,26 @@ public sealed class ReminderEngine
             : (EngineTrayState.Counting, $"距下次提醒约 {min} 分钟");
     }
 
+    /// <summary>
+    /// 距下次提醒的倒计时进度（0=周期刚开始，1=到点），供托盘图标进度环使用。
+    /// 弹窗中/已暂停/锁屏/离开/非工作时段/午休/启动缓冲等没有进行中的倒计时，返回 null（不画环）。
+    /// 推迟中也算倒计时：进度按"推迟时长"计。
+    /// </summary>
+    public double? GetCountdownProgress()
+    {
+        if (OverlayOpen || _userPauseUntil != null || _locked || _idlePaused || _pendingFire) return null;
+        var now = DateTime.Now;
+        if (!InWorkHours(now) || InLunch(now)) return null;
+        if (now < _launchedAt.AddMinutes(_config.StartupDelayMinutes)) return null;
+        if (_postponeAt is DateTime pa)
+        {
+            var total = Math.Max(1, _config.PostponeMinutes) * 60.0;
+            return Math.Clamp(1.0 - (pa - now).TotalSeconds / total, 0.0, 1.0);
+        }
+        var cycle = Math.Max(1, _config.IntervalMinutes) * 60.0;
+        return Math.Clamp(1.0 - _remainingSec / cycle, 0.0, 1.0);
+    }
+
     // ---------------- 计时主循环 ----------------
 
     private void OnTick(object? sender, EventArgs e)

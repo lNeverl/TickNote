@@ -2,3 +2,5 @@
 dist/
 [Bb]in/
 [Oo]bj/
+# logo 原图：已复制为 src/Assets/TickNote.png / TickNote.ico，仓库里保留那一份即可
+logo.png

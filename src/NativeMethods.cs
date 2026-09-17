@@ -22,6 +22,10 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     internal static extern bool SetForegroundWindow(IntPtr hWnd);
 
+    /// <summary>销毁 Icon.FromHandle 创建的图标句柄（托盘进度环每秒重绘，不销毁会泄漏 GDI 句柄）。</summary>
+    [DllImport("user32.dll")]
+    internal static extern bool DestroyIcon(IntPtr hIcon);
+
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 

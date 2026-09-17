@@ -18,16 +18,15 @@ public sealed class WizardForm : DpiForm
 
     public WizardForm()
     {
-        Text = "久坐提醒 - 首次运行设置";
+        Text = "TickNote - 首次运行设置";
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        ClientSize = new Size(540, 330);
-        // 高度由内容决定：任何 DPI/缩放下按钮行都不可能被挤出可视区
+        // 不设固定 ClientSize：窗口严格贴合内容，按钮紧跟内容下方，不会出现大片空白
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        MinimumSize = new Size(560, 0); // 宽度下限（DpiForm 会按 DPI 比率缩放它）
+        MinimumSize = new Size(500, 0); // 宽度下限（DpiForm 会按 DPI 比率缩放它）
         Font = new Font("Microsoft YaHei UI", 9F);
 
         var root = new TableLayoutPanel
@@ -42,7 +41,7 @@ public sealed class WizardForm : DpiForm
 
         var lblTitle = new Label
         {
-            Text = "欢迎使用 久坐提醒 + 工作流水记录",
+            Text = "欢迎使用 TickNote（久坐提醒 + 工作流水记录）",
             Font = new Font(Font.FontFamily, 12F, FontStyle.Bold),
             AutoSize = true,
             Margin = new Padding(0, 0, 0, 8),
@@ -60,7 +59,7 @@ public sealed class WizardForm : DpiForm
             Text = "便携模式：保存在软件目录下的 data 文件夹（整个文件夹拷到 U 盘/别的电脑即可继续使用）",
             AutoSize = true,
             Checked = true,
-            MaximumSize = new Size(500, 0), // 超长自动换行，不被右边缘裁掉
+            MaximumSize = new Size(460, 0), // 超长自动换行，不被右边缘裁掉
             Margin = new Padding(0, 0, 0, 2),
         };
 
@@ -80,7 +79,7 @@ public sealed class WizardForm : DpiForm
         {
             Text = "自定义目录：自己选择一个文件夹（如 D:\\我的数据 或 %APPDATA%）",
             AutoSize = true,
-            MaximumSize = new Size(500, 0),
+            MaximumSize = new Size(460, 0),
             Margin = new Padding(0, 0, 0, 4),
         };
 
@@ -92,7 +91,7 @@ public sealed class WizardForm : DpiForm
             WrapContents = false,
             Margin = new Padding(26, 0, 0, 0),
         };
-        _txtCustom = new TextBox { Width = 340, Enabled = false };
+        _txtCustom = new TextBox { Width = 300, Enabled = false };
         _btnBrowse = new Button { Text = "浏览…", Enabled = false, AutoSize = true };
         customRow.Controls.Add(_txtCustom);
         customRow.Controls.Add(_btnBrowse);

@@ -10,9 +10,21 @@ public abstract class DpiForm : Form
 {
     private int _appliedDpi = 96;
 
+    private static Icon? _appIcon;
+
+    /// <summary>嵌入资源的应用图标（Assets/TickNote.ico），所有窗口共用同一个实例。</summary>
+    internal static Icon AppIcon => _appIcon ??= LoadAppIcon();
+
+    private static Icon LoadAppIcon()
+    {
+        var s = typeof(DpiForm).Assembly.GetManifestResourceStream("SedentaryReminder.Assets.TickNote.ico");
+        return s != null ? new Icon(s) : SystemIcons.Application;
+    }
+
     protected DpiForm()
     {
         AutoScaleMode = AutoScaleMode.None;
+        Icon = AppIcon; // 标题栏 / Alt+Tab / 任务栏统一用软件图标
     }
 
     protected override void OnHandleCreated(EventArgs e)

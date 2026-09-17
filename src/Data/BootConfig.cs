@@ -48,8 +48,8 @@ public sealed class BootConfig
 public sealed class AppConfig
 {
     // —— M1 提醒引擎 ——
-    public int IntervalMinutes { get; set; } = 50;        // 提醒周期 20-120
-    public int BreakMinutes { get; set; } = 5;            // 活动时长 1-30
+    public int IntervalMinutes { get; set; } = 50;        // 提醒周期 5-480
+    public int BreakMinutes { get; set; } = 5;            // 活动时长 1-120
     public int PostponeMinutes { get; set; } = 10;        // 每次推迟时长
     public string WorkStart { get; set; } = "08:30";
     public string WorkEnd { get; set; } = "18:30";

@@ -1,4 +1,4 @@
-# 久坐提醒 + 工作流水记录
+# TickNote（久坐提醒 + 工作流水记录）
 
 Windows 桌面小工具：每隔 N 分钟（默认 50）全屏提醒起身活动，弹窗里顺手记一句"在做什么"，
 一天的工作流水自动串起来；每天/每周一键复制"提示词+数据"给 AI，生成日报/周报后粘贴回来保存。
@@ -35,7 +35,7 @@ dotnet run --project tests\RegressionTests.csproj
 dotnet publish src\SedentaryReminder.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o dist
 ```
 
-产物：`dist\SedentaryReminder.exe`（约 65 MB 单文件，拷到任何电脑双击即用）。
+产物：`dist\TickNote.exe`（约 65 MB 单文件，拷到任何电脑双击即用）。
 
 ## 数据位置
 
@@ -61,6 +61,7 @@ SedentaryReminder.sln     解决方案
 build.bat                 双击打包单文件 EXE 到 dist\
 src\
 ├── SedentaryReminder.csproj
+├── Assets\               TickNote.ico / TickNote.png 软件图标（exe 图标 + 嵌入资源）
 ├── Program.cs            入口（PerMonitorV2、单实例）
 ├── AppContext.cs         主上下文：引导 + 各模块接线
 ├── NativeMethods.cs      Win32：空闲检测 / 焦点 / 全屏应用检测

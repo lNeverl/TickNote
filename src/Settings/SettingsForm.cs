@@ -49,7 +49,7 @@ public sealed class SettingsForm : DpiForm
         _app = app;
         _config = app.Config;
 
-        Text = "设置 - 久坐提醒";
+        Text = "设置 - TickNote";
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(620, 560);
         Font = new Font("Microsoft YaHei UI", 9F);
@@ -94,8 +94,8 @@ public sealed class SettingsForm : DpiForm
     {
         var page = new TabPage("提醒") { AutoScroll = true };
         var grid = MakeGrid();
-        _numInterval = AddNumRow(grid, "提醒周期（分钟，20-120）", 20, 120);
-        _numBreak = AddNumRow(grid, "活动时长（分钟，1-30）", 1, 30);
+        _numInterval = AddNumRow(grid, "提醒周期（分钟，5-480）", 5, 480);
+        _numBreak = AddNumRow(grid, "活动时长（分钟，1-120）", 1, 120);
         _numPostpone = AddNumRow(grid, "每次推迟时长（分钟）", 1, 60);
         _numStartupDelay = AddNumRow(grid, "启动后首次延迟（分钟）", 0, 120);
 
@@ -328,8 +328,8 @@ public sealed class SettingsForm : DpiForm
     private void LoadFromConfig()
     {
         var c = _config;
-        _numInterval.Value = Math.Clamp(c.IntervalMinutes, 20, 120);
-        _numBreak.Value = Math.Clamp(c.BreakMinutes, 1, 30);
+        _numInterval.Value = Math.Clamp(c.IntervalMinutes, 5, 480);
+        _numBreak.Value = Math.Clamp(c.BreakMinutes, 1, 120);
         _numPostpone.Value = Math.Clamp(c.PostponeMinutes, 1, 60);
         _numStartupDelay.Value = Math.Clamp(c.StartupDelayMinutes, 0, 120);
         _chkIdle.Checked = c.IdleDetectionEnabled;

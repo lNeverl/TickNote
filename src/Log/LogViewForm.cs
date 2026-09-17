@@ -70,7 +70,9 @@ public sealed class LogViewForm : DpiForm
         btnEdit.Click += (_, _) => EditSelected();
         var btnDelete = new Button { Text = "删除", AutoSize = true };
         btnDelete.Click += (_, _) => DeleteSelected();
+        // 本窗体是 Show() 非模态打开的，DialogResult 不会关窗，必须显式 Close()
         var btnClose = new Button { Text = "关闭", DialogResult = DialogResult.Cancel, AutoSize = true };
+        btnClose.Click += (_, _) => Close();
         btnRow.Controls.Add(btnAdd);
         btnRow.Controls.Add(btnEdit);
         btnRow.Controls.Add(btnDelete);

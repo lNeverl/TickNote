@@ -5,6 +5,7 @@ namespace SedentaryReminder.Overlay;
 /// <summary>
 /// 单块屏幕上的全屏提醒窗体（M2）。深色半透明遮罩 + 居中卡片：
 /// 提醒文案、倒计时、输入框、快捷标签（点选式）、今日流水（继续/删除）、保存按钮、三按钮。
+/// 今日流水默认隐藏（小眼睛开关），保护隐私。
 /// 布局全部用容器（H3），禁止绝对坐标；高 DPI 走 AutoScaleMode.None + ApplyDpiScale 手动缩放。
 /// </summary>
 public sealed class OverlayForm : Form
@@ -32,6 +33,9 @@ public sealed class OverlayForm : Form
     private readonly Label _lblHint;
     private readonly Panel _logPanelOuter;
     private readonly FlowLayoutPanel _logFlow;
+    private readonly Button _btnEye;
+    private bool _logsVisible; // 隐私开关：每次弹窗默认隐藏今日记录，点小眼睛才显示
+    private List<WorkLogEntry> _todayLogs = new();
     private readonly Dictionary<string, Button> _tagButtons = new();
     private readonly System.Windows.Forms.Timer _fadeTimer;
     private readonly List<Font> _fonts = new(); // 弹窗每天弹出十余次，字体必须随窗体释放（N1 内存硬指标）
@@ -167,15 +171,34 @@ public sealed class OverlayForm : Form
         tagRow.Controls.Add(_btnSave, 1, 0);
         tagRow.Margin = new Padding(0, 0, 0, 10);
 
+        // 隐私开关（小眼睛）：默认隐藏今日记录内容，防止弹窗时被旁人看到
+        var todayRow = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2 };
+        todayRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        todayRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var lblToday = new Label
         {
             Text = "—— 今天已记录 ——",
             AutoSize = true,
             ForeColor = Color.FromArgb(150, 150, 160),
+            Anchor = AnchorStyles.Left,
             Margin = new Padding(0, 0, 0, 4),
         };
+        _btnEye = new Button
+        {
+            Text = "👁 显示",
+            AutoSize = true,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = TagBack,
+            ForeColor = CardFore,
+            Anchor = AnchorStyles.Right,
+            Padding = new Padding(6, 0, 6, 0),
+            Margin = new Padding(0, 0, 0, 4),
+        };
+        _btnEye.Click += (_, _) => _manager.OnLogsVisibilityToggled();
+        todayRow.Controls.Add(lblToday, 0, 0);
+        todayRow.Controls.Add(_btnEye, 1, 0);
 
-        // M2-9 今日流水面板（继续 / 删除）
+        // M2-9 今日流水面板（继续 / 删除），默认折叠隐藏
         var outer = new Panel
         {
             Dock = DockStyle.Fill,
@@ -183,6 +206,7 @@ public sealed class OverlayForm : Form
             AutoScroll = true,
             BackColor = Color.FromArgb(26, 26, 32),
             Margin = new Padding(0, 0, 0, 12),
+            Visible = false,
         };
         _logFlow = new FlowLayoutPanel
         {
@@ -228,7 +252,7 @@ public sealed class OverlayForm : Form
         card.Controls.Add(lblInput);
         card.Controls.Add(_txtInput);
         card.Controls.Add(tagRow);
-        card.Controls.Add(lblToday);
+        card.Controls.Add(todayRow);
         card.Controls.Add(outer);
         card.Controls.Add(btnRow);
         card.Controls.Add(lblHint);
@@ -251,7 +275,9 @@ public sealed class OverlayForm : Form
     /// <summary>重建今日流水列表（保存/删除后由管理器调用，所有屏同步刷新）。</summary>
     public void RefreshLogs(List<WorkLogEntry> logs)
     {
+        _todayLogs = logs;
         _logFlow.Controls.Clear();
+        if (!_logsVisible) return; // 隐私模式：隐藏时不渲染任何内容
         if (logs.Count == 0)
         {
             _logFlow.Controls.Add(new Label
@@ -292,6 +318,16 @@ public sealed class OverlayForm : Form
             row.Controls.Add(btnDelete);
             _logFlow.Controls.Add(row);
         }
+    }
+
+    /// <summary>小眼睛开关：显示/隐藏今日流水（由管理器同步到所有屏）。</summary>
+    public void SetLogsVisible(bool visible)
+    {
+        _logsVisible = visible;
+        _btnEye.Text = visible ? "👁 隐藏" : "👁 显示";
+        _logPanelOuter.Visible = visible;
+        if (visible) RefreshLogs(_todayLogs);
+        else _logFlow.Controls.Clear();
     }
 
     private static Button MakeRowButton(string text) => new()

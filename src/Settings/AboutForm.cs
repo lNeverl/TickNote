@@ -7,7 +7,7 @@ public sealed class AboutForm : DpiForm
 {
     public AboutForm(string dataDir)
     {
-        Text = "关于 久坐提醒";
+        Text = "关于 TickNote";
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -21,7 +21,7 @@ public sealed class AboutForm : DpiForm
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 1 };
         root.Controls.Add(new Label
         {
-            Text = $"久坐提醒 + 工作流水记录  v{version}",
+            Text = $"TickNote（久坐提醒 + 工作流水记录）  v{version}",
             Font = new Font(Font.FontFamily, 11F, FontStyle.Bold),
             AutoSize = true,
             Margin = new Padding(0, 0, 0, 10),

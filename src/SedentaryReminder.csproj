@@ -7,8 +7,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <AssemblyName>SedentaryReminder</AssemblyName>
+    <AssemblyName>TickNote</AssemblyName>
     <RootNamespace>SedentaryReminder</RootNamespace>
+    <ApplicationIcon>Assets\TickNote.ico</ApplicationIcon>
     <Version>1.0.0</Version>
     <AssemblyInformationalVersion>1.0.0</AssemblyInformationalVersion>
     <InvariantGlobalization>true</InvariantGlobalization>
@@ -18,6 +19,9 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.10" />
+    <!-- 托盘进度环要在图标上叠画，需要原图；窗口图标也用它（IcoResource 逻辑名见 DpiForm） -->
+    <EmbeddedResource Include="Assets\TickNote.png" />
+    <EmbeddedResource Include="Assets\TickNote.ico" />
   </ItemGroup>
 
 </Project>

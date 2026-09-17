@@ -26,6 +26,7 @@ public sealed class OverlayManager
     private int _countdownTotalSec;
     private int _countdownRemainingSec;
     private IntPtr _prevForeground;
+    private bool _logsVisible; // 小眼睛状态，所有屏一致
 
     public bool IsOpen { get; private set; }
 
@@ -52,6 +53,7 @@ public sealed class OverlayManager
         _inputText = "";
         _selectedTag = null;
         _continueFromId = null;
+        _logsVisible = false; // 每次弹窗默认隐藏今日记录（隐私）
         _countdownTotalSec = Math.Max(1, _config.BreakMinutes) * 60;
         _countdownRemainingSec = _countdownTotalSec;
         _prevForeground = NativeMethods.GetForegroundWindow(); // N5：关窗后恢复焦点
@@ -70,6 +72,7 @@ public sealed class OverlayManager
             form.Show();
             form.SetInputText(_inputText);       // 热插拔重建时保留状态（N4）
             form.SetSelectedTag(_selectedTag);
+            form.SetLogsVisible(_logsVisible);
         }
         // M2-12：主屏弹窗输入框获得焦点
         var primary = _forms.FirstOrDefault(f => f.IsPrimary);
@@ -132,6 +135,13 @@ public sealed class OverlayManager
             f.SetSelectedTag(_selectedTag);
         }
         _forms.FirstOrDefault(f => f.IsPrimary)?.FocusInput();
+    }
+
+    /// <summary>小眼睛：显示/隐藏今日流水，任一屏点击所有屏同步。</summary>
+    internal void OnLogsVisibilityToggled()
+    {
+        _logsVisible = !_logsVisible;
+        foreach (var f in _forms) f.SetLogsVisible(_logsVisible);
     }
 
     // ---------------- 保存 / 删除 ----------------

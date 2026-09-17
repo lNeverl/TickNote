@@ -20,9 +20,9 @@ echo [1/2] Publishing...
 
 rem If the app is running from dist\, the EXE is locked and publish will fail.
 rem Use findstr (not find) so this works even when a GNU toolchain shadows find.exe in PATH.
-tasklist /FI "IMAGENAME eq SedentaryReminder.exe" 2>nul | findstr /I /C:"SedentaryReminder.exe" >nul
+tasklist /FI "IMAGENAME eq TickNote.exe" 2>nul | findstr /I /C:"TickNote.exe" >nul
 if not errorlevel 1 (
-    echo [WARN] SedentaryReminder.exe is currently running, the output file is locked.
+    echo [WARN] TickNote.exe is currently running, the output file is locked.
     echo        Please right-click the tray icon and choose "Exit" first,
     echo        then press any key to continue building...
     pause
@@ -38,6 +38,6 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/2] Done: dist\SedentaryReminder.exe
+echo [2/2] Done: dist\TickNote.exe
 echo Copy this single EXE to any Windows 10/11 x64 PC and run it directly.
 pause
