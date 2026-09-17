@@ -16,13 +16,21 @@ if errorlevel 1 (
     exit /b 1
 )
 
+for /f "usebackq delims=" %%V in (`dotnet msbuild src\SedentaryReminder.csproj -nologo -getProperty:SafeFileVersion`) do set "APP_VERSION=%%V"
+if not defined APP_VERSION (
+    echo [ERROR] Could not read the application version from the project file.
+    pause
+    exit /b 1
+)
+set "OUTPUT_EXE=TickNote-v%APP_VERSION%.exe"
+
 echo [1/2] Publishing...
 
 rem If the app is running from dist\, the EXE is locked and publish will fail.
 rem Use findstr (not find) so this works even when a GNU toolchain shadows find.exe in PATH.
-tasklist /FI "IMAGENAME eq TickNote.exe" 2>nul | findstr /I /C:"TickNote.exe" >nul
+tasklist 2>nul | findstr /I /C:"TickNote.exe" /C:"TickNote-v" >nul
 if not errorlevel 1 (
-    echo [WARN] TickNote.exe is currently running, the output file is locked.
+    echo [WARN] A TickNote EXE is currently running and may be locked.
     echo        Please right-click the tray icon and choose "Exit" first,
     echo        then press any key to continue building...
     pause
@@ -38,6 +46,6 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/2] Done: dist\TickNote.exe
+echo [2/2] Done: dist\%OUTPUT_EXE%
 echo Copy this single EXE to any Windows 10/11 x64 PC and run it directly.
 pause

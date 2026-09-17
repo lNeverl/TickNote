@@ -35,7 +35,8 @@ dotnet run --project tests\RegressionTests.csproj
 dotnet publish src\SedentaryReminder.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o dist
 ```
 
-产物：`dist\TickNote.exe`（约 65 MB 单文件，拷到任何电脑双击即用）。
+产物：`dist\TickNote-vX.Y.Z.exe`，例如 `dist\TickNote-v1.0.3.exe`（约 65 MB 单文件，拷到任何电脑双击即用）。
+文件名仅使用 ASCII 字母、数字、连字符和点，避免 Windows 路径兼容问题。
 
 ## 数据位置
 
