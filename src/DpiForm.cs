@@ -31,6 +31,15 @@ public abstract class DpiForm : Form
     {
         base.OnHandleCreated(e);
         ApplyDpi(DeviceDpi);
+        // CenterScreen 的居中在句柄创建时按缩放前的小尺寸计算，ApplyDpi 放大窗口后会偏右下；
+        // 按缩放后的实际尺寸重新居中（仅初次创建时做，DPI 变化不抢用户的窗口位置）
+        if (StartPosition == FormStartPosition.CenterScreen)
+        {
+            var work = Screen.FromControl(this).WorkingArea;
+            Location = new Point(
+                work.Left + Math.Max(0, (work.Width - Width) / 2),
+                work.Top + Math.Max(0, (work.Height - Height) / 2));
+        }
     }
 
     protected override void OnDpiChanged(DpiChangedEventArgs e)
@@ -63,37 +72,27 @@ public abstract class DpiForm : Form
         var factor = dpi / (float)_appliedDpi;
         _appliedDpi = dpi;
         // 外层挂起布局：Scale 内部的 ResumeLayout 只会递减计数不会真正重排，
-        // 等 Min/Max 约束也缩放完后统一一次重排——否则 AutoSize 控件按"缩放后字体 +
-        // 未缩放约束"的中间态测量并残留（换行高度、溢出宽度都卡死在错误值）
+        // 等 Scale 全部完成后统一一次重排，避免 AutoSize 控件按中间态测量残留。
+        // 注意不要再手动缩放 MinimumSize/MaximumSize：.NET 8 的 Control.Scale 已经会
+        // 缩放它们，再缩一次会把最小尺寸放大两倍，整个窗口被撑成巨窗
         SuspendLayout();
         try
         {
             Scale(new SizeF(factor, factor));
-            ScaleSizeConstraints(this, factor);
         }
         finally
         {
             ResumeLayout(true);
         }
+        ForceRelayout(this);
         PerformLayout();
     }
 
-    // Control.Scale 不缩放 MaximumSize/MinimumSize，不补齐的话换行宽度等约束会和
-    // 缩放后的字体不成比例（文本多折行把固定高度窗口的内容行撑超，挤没末尾的按钮）。
-    private static void ScaleSizeConstraints(Control c, float factor)
+    // Scale 只按旧坐标缩放子控件 Bounds，嵌套容器（如 FlowLayoutPanel）不会自动按新
+    // 宽度重新排布子项。自底向上逐层强制布局一次，让每个容器用缩放后的尺寸重新测量。
+    private static void ForceRelayout(Control c)
     {
-        if (c.MaximumSize.Width > 0 || c.MaximumSize.Height > 0)
-        {
-            c.MaximumSize = new Size(
-                c.MaximumSize.Width > 0 ? (int)Math.Round(c.MaximumSize.Width * factor) : 0,
-                c.MaximumSize.Height > 0 ? (int)Math.Round(c.MaximumSize.Height * factor) : 0);
-        }
-        if (c.MinimumSize.Width > 0 || c.MinimumSize.Height > 0)
-        {
-            c.MinimumSize = new Size(
-                c.MinimumSize.Width > 0 ? (int)Math.Round(c.MinimumSize.Width * factor) : 0,
-                c.MinimumSize.Height > 0 ? (int)Math.Round(c.MinimumSize.Height * factor) : 0);
-        }
-        foreach (Control child in c.Controls) ScaleSizeConstraints(child, factor);
+        foreach (Control child in c.Controls) ForceRelayout(child);
+        c.PerformLayout(c, "Bounds");
     }
 }

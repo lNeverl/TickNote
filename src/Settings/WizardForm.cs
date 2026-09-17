@@ -89,7 +89,7 @@ public sealed class WizardForm : DpiForm
             Dock = DockStyle.Fill,
             AutoSize = true,
             FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
+            WrapContents = true, // DPI 切换后按钮尺寸可能短暂失真，允许折行兜底：宁可换行也不裁掉
             Margin = new Padding(26, 0, 0, 0),
         };
         _txtCustom = new TextBox { Width = 300, Enabled = false };

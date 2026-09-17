@@ -71,8 +71,9 @@ public sealed class ReportViewForm : DpiForm
         root.SetRowSpan(_txtContent, 2);
         root.Controls.Add(_txtContent, 2, 1);
 
-        // WrapContents=false + 窗口最小宽度：缩放窗口时按钮始终保持一行，不再换行乱跑
-        var btnRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false };
+        // 窗口最小宽度保证正常情况按钮一行放下；WrapContents 兜底：DPI 切换后按钮尺寸
+        // 短暂失真时允许折行，宁可换行也不裁掉
+        var btnRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
         root.SetColumnSpan(btnRow, 3);
 
         // 所有按钮同字体同 Padding，AutoSize 高度一致，风格统一

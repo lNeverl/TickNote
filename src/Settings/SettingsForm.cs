@@ -105,7 +105,7 @@ public sealed class SettingsForm : DpiForm
         grid.Controls.Add(_chkIdle);
         _numIdleThreshold = AddNumRow(grid, "空闲阈值（分钟）", 1, 60);
 
-        var idleRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false };
+        var idleRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true }; // DPI 切换后按钮尺寸可能短暂失真，允许折行兜底：宁可换行也不裁掉
         idleRow.Controls.Add(new Label { Text = "回来后：", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 6, 4, 0) });
         _rbIdleContinue = new RadioButton { Text = "继续剩余时间", AutoSize = true, Checked = true };
         _rbIdleRestart = new RadioButton { Text = "重新计时", AutoSize = true };
@@ -166,7 +166,7 @@ public sealed class SettingsForm : DpiForm
         _lstTags = new ListBox { Dock = DockStyle.Fill };
         layout.Controls.Add(_lstTags, 0, 0);
 
-        var addRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false };
+        var addRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true }; // DPI 切换后按钮尺寸可能短暂失真，允许折行兜底：宁可换行也不裁掉
         _txtNewTag = new TextBox { Width = 200 };
         var btnAdd = new Button { Text = "添加", AutoSize = true };
         btnAdd.Click += (_, _) =>

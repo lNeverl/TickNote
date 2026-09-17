@@ -49,7 +49,7 @@ public sealed class ManualEntryForm : DpiForm
         grid.Controls.Add(MakeLabel("日期"), 0, 0);
         grid.Controls.Add(_dtDate, 1, 0);
         grid.Controls.Add(MakeLabel("时间段"), 0, 1);
-        var timeRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false };
+        var timeRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true }; // DPI 切换后按钮尺寸可能短暂失真，允许折行兜底：宁可换行也不裁掉
         timeRow.Controls.Add(_dtStart);
         timeRow.Controls.Add(new Label { Text = "至", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(6, 6, 6, 0) });
         timeRow.Controls.Add(_dtEnd);

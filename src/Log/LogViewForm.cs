@@ -28,7 +28,7 @@ public sealed class LogViewForm : DpiForm
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         // 顶部：日期选择
-        var topRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false };
+        var topRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true }; // DPI 切换后按钮尺寸可能短暂失真，允许折行兜底：宁可换行也不裁掉
         topRow.Controls.Add(new Label { Text = "日期：", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 4, 0) });
         _dtDate = new DateTimePicker
         {
@@ -61,7 +61,7 @@ public sealed class LogViewForm : DpiForm
         root.Controls.Add(_list, 0, 1);
 
         // 底部按钮
-        var btnRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false };
+        var btnRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true }; // DPI 切换后按钮尺寸可能短暂失真，允许折行兜底：宁可换行也不裁掉
         var btnAdd = new Button { Text = "补录一条", AutoSize = true };
         btnAdd.Click += (_, _) =>
         {

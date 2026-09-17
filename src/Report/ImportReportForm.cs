@@ -32,7 +32,7 @@ public sealed class ImportReportForm : DpiForm
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        var typeRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false };
+        var typeRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true }; // DPI 切换后按钮尺寸可能短暂失真，允许折行兜底：宁可换行也不裁掉
         _rbDaily = new RadioButton { Text = "日报", Checked = true, AutoSize = true };
         _rbWeekly = new RadioButton { Text = "周报", AutoSize = true };
         _rbDaily.CheckedChanged += (_, _) => UpdatePeriodLabel();

@@ -33,7 +33,7 @@ public sealed class ExportForm : DpiForm
         root.Controls.Add(new Label { Text = "到", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 1);
         root.Controls.Add(_dtTo, 1, 1);
 
-        var fmtRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false };
+        var fmtRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true }; // DPI 切换后按钮尺寸可能短暂失真，允许折行兜底：宁可换行也不裁掉
         _rbMd = new RadioButton { Text = "Markdown", Checked = true, AutoSize = true };
         _rbCsv = new RadioButton { Text = "CSV", AutoSize = true };
         fmtRow.Controls.Add(_rbMd);
