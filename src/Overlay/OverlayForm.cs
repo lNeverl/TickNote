@@ -3,15 +3,19 @@ using SedentaryReminder.Data;
 namespace SedentaryReminder.Overlay;
 
 /// <summary>
-/// 单块屏幕上的全屏提醒窗体（M2）。深色半透明遮罩 + 居中卡片：
-/// 提醒文案、倒计时、输入框、快捷标签（点选式）、今日流水（继续/删除）、保存按钮、三按钮。
-/// 今日流水默认隐藏（小眼睛开关），保护隐私。
+/// 单块屏幕上的卡片层窗体（M2）。不透明卡片：提醒文案、倒计时、输入框、
+/// 快捷标签（点选式）、今日流水（继续/删除，默认隐藏见小眼睛开关）、保存按钮、三按钮。
+/// 卡片以外的区域用 TransparencyKey 镂空（透明且点击穿透），下层的 DimForm 提供半透明遮罩——
+/// 这样背景保持半透明能看到桌面，卡片本身 100% 不透明，文字清晰。
 /// 布局全部用容器（H3），禁止绝对坐标；高 DPI 走 AutoScaleMode.None + ApplyDpiScale 手动缩放。
 /// </summary>
 public sealed class OverlayForm : Form
 {
-    private const double TargetOpacity = 0.85;
+    private const double TargetOpacity = 1.0; // 卡片层本身完全不透明；透明感由下层 DimForm 提供
     private const int LogPanelHeight = 150;
+
+    /// <summary>镂空色：卡片以外的区域显示为该色即被 TransparencyKey 抠掉。</summary>
+    private static readonly Color KeyColor = Color.Magenta;
 
     private static readonly Color CardBack = Color.FromArgb(32, 32, 40);
     private static readonly Color CardFore = Color.FromArgb(235, 235, 240);
@@ -58,7 +62,8 @@ public sealed class OverlayForm : Form
         StartPosition = FormStartPosition.Manual;
         TopMost = true;                 // M2-12 置顶
         ShowInTaskbar = false;
-        BackColor = Color.Black;
+        BackColor = KeyColor;           // 卡片以外的区域全部镂空
+        TransparencyKey = KeyColor;
         Opacity = 0;                    // M2-14 淡入
         KeyPreview = true;              // M2-13 ESC
         Font = TrackFont(new Font("Microsoft YaHei UI", 10F));

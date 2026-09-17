@@ -3,7 +3,8 @@ using SedentaryReminder.Data;
 namespace SedentaryReminder.Overlay;
 
 /// <summary>
-/// 全屏提醒弹窗管理器（M2）：每屏一个 OverlayForm，共享同一份状态（输入文本/选中标签/倒计时/今日流水），
+/// 全屏提醒弹窗管理器（M2）：每屏一对窗口——DimForm 半透明背景层 + OverlayForm 不透明卡片层，
+/// 共享同一份状态（输入文本/选中标签/倒计时/今日流水/小眼睛开关），
 /// 任一屏操作实时同步到其他屏（M2-2），关闭即全部关闭（M2-1）。
 /// 保存交互：独立“保存”按钮（3 秒冷却，可连续存多条）+ 关闭按钮兜底自动保存 + 流水可删除。
 /// </summary>
@@ -15,6 +16,7 @@ public sealed class OverlayManager
     private readonly AppConfig _config;
     private readonly Database _db;
     private readonly List<OverlayForm> _forms = new();
+    private readonly List<DimForm> _dimForms = new();
     private System.Windows.Forms.Timer? _countdownTimer;
     private System.Windows.Forms.Timer? _saveCooldownTimer;
     private System.Windows.Forms.Timer? _saveFlashTimer;
@@ -67,8 +69,14 @@ public sealed class OverlayManager
         var logs = TodayLogs();
         foreach (var screen in Screen.AllScreens)
         {
+            // 先铺半透明背景层，再放不透明卡片层（z 序：卡片在上）
+            var dim = new DimForm(screen);
+            dim.Show();
+            _dimForms.Add(dim);
+
             var form = new OverlayForm(this, _config, screen, logs);
             _forms.Add(form);
+            dim.Click += (_, _) => form.Activate(); // 点到背景时把焦点还给卡片层（ESC 才能用）
             form.Show();
             form.SetInputText(_inputText);       // 热插拔重建时保留状态（N4）
             form.SetSelectedTag(_selectedTag);
@@ -244,6 +252,8 @@ public sealed class OverlayManager
         if (!IsOpen) return;
         foreach (var f in _forms) { f.Hide(); f.Dispose(); }
         _forms.Clear();
+        foreach (var d in _dimForms) { d.Hide(); d.Dispose(); }
+        _dimForms.Clear();
         CreateForms();
         UpdateCountdownOnForms();
     }
@@ -261,10 +271,45 @@ public sealed class OverlayManager
         _saveFlashTimer = null;
         foreach (var f in _forms) { f.Hide(); f.Dispose(); }
         _forms.Clear();
+        foreach (var d in _dimForms) { d.Hide(); d.Dispose(); }
+        _dimForms.Clear();
         IsOpen = false;
 
         // N5 / M2-12：恢复原窗口键盘焦点
         if (_prevForeground != IntPtr.Zero)
             NativeMethods.SetForegroundWindow(_prevForeground);
+    }
+
+    /// <summary>
+    /// 半透明背景层：铺满整屏，负责遮罩和吃掉背景点击，不抢焦点。
+    /// 卡片层（OverlayForm）用 TransparencyKey 镂空背景区域叠在它上面，
+    /// 效果 = 背景半透明能看到桌面，卡片 100% 不透明文字清晰。
+    /// </summary>
+    private sealed class DimForm : Form
+    {
+        private const double DimOpacity = 0.60; // 比整窗 0.85 略透，桌面内容隐约可见
+
+        private readonly Screen _screen;
+
+        public DimForm(Screen screen)
+        {
+            _screen = screen;
+            AutoScaleMode = AutoScaleMode.None; // 与 OverlayForm 同理：Bounds 手动精确等于本屏，防框架二次缩放越屏
+            FormBorderStyle = FormBorderStyle.None;
+            Bounds = screen.Bounds;
+            StartPosition = FormStartPosition.Manual;
+            ShowInTaskbar = false;
+            TopMost = true;
+            BackColor = Color.Black;
+            Opacity = DimOpacity;
+        }
+
+        protected override bool ShowWithoutActivation => true; // 不抢卡片层输入框的焦点
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            Bounds = _screen.Bounds;
+        }
     }
 }
