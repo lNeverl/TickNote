@@ -18,6 +18,7 @@ public sealed class RecordedDatePickerForm : DpiForm
         SelectedDate = selected;
         Text = "选择有记录的日期";
         Font = new Font("Microsoft YaHei UI", 9F);
+        BackColor = UiLayout.PageBack;
         ClientSize = new Size(350, 370);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -29,13 +30,17 @@ public sealed class RecordedDatePickerForm : DpiForm
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        var header = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3 };
+        var header = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 3, Margin = new Padding(0, 0, 0, 10) };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        _previous = new Button { Text = "‹", AutoSize = true, MinimumSize = new Size(32, 0) };
-        _next = new Button { Text = "›", AutoSize = true, MinimumSize = new Size(32, 0) };
-        _month = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+        _previous = UiLayout.Button("‹");
+        _next = UiLayout.Button("›");
+        _previous.MinimumSize = _next.MinimumSize = new Size(32, 32);
+        _previous.Padding = _next.Padding = Padding.Empty;
+        _previous.Margin = new Padding(0, 0, 8, 0);
+        _next.Margin = new Padding(8, 0, 0, 0);
+        _month = new ComboBox { Anchor = AnchorStyles.Left | AnchorStyles.Right, DropDownStyle = ComboBoxStyle.DropDownList, Margin = Padding.Empty };
         foreach (var month in _months) _month.Items.Add(month.ToString("yyyy年MM月"));
         _previous.Click += (_, _) => _month.SelectedIndex--;
         _next.Click += (_, _) => _month.SelectedIndex++;
@@ -44,13 +49,13 @@ public sealed class RecordedDatePickerForm : DpiForm
         header.Controls.Add(_month, 1, 0);
         header.Controls.Add(_next, 2, 0);
         root.Controls.Add(header, 0, 0);
-        var calendar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 7, RowCount = 7 };
+        var calendar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 7, RowCount = 7, Margin = Padding.Empty };
         for (var col = 0; col < 7; col++) calendar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F / 7));
         calendar.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         for (var row = 0; row < 6; row++) calendar.RowStyles.Add(new RowStyle(SizeType.Percent, 100F / 6));
         var weekdays = new[] { "一", "二", "三", "四", "五", "六", "日" };
         for (var col = 0; col < 7; col++)
-            calendar.Controls.Add(new Label { Text = weekdays[col], Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, AutoSize = true }, col, 0);
+            calendar.Controls.Add(new Label { Text = weekdays[col], Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 6) }, col, 0);
         for (var i = 0; i < _days.Length; i++)
         {
             var day = new Button { Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat, Margin = new Padding(2), Enabled = false };
@@ -72,8 +77,9 @@ public sealed class RecordedDatePickerForm : DpiForm
             Text = _dates.Count == 0 ? "还没有流水记录。" : "蓝色日期有记录；灰色日期不可选择。",
             AutoSize = true, Margin = new Padding(0, 8, 0, 8),
         }, 0, 2);
-        var cancel = new Button { Text = "取消", AutoSize = true, DialogResult = DialogResult.Cancel, Anchor = AnchorStyles.Right };
-        root.Controls.Add(cancel, 0, 3);
+        var cancel = UiLayout.Button("取消");
+        cancel.DialogResult = DialogResult.Cancel;
+        root.Controls.Add(UiLayout.ButtonRow(true, cancel), 0, 3);
         CancelButton = cancel;
         Controls.Add(root);
         var initialMonth = selected is DateTime initial ? new DateTime(initial.Year, initial.Month, 1) : DateTime.MinValue;

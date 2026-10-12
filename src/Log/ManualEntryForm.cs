@@ -30,6 +30,7 @@ public sealed class ManualEntryForm : DpiForm
         MinimizeBox = false;
         ClientSize = new Size(540, 380);
         Font = new Font("Microsoft YaHei UI", 9F);
+        BackColor = UiLayout.PageBack;
 
         var grid = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(14), ColumnCount = 2, RowCount = 7 };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70));
@@ -42,7 +43,7 @@ public sealed class ManualEntryForm : DpiForm
         grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        _dtDate = new DateTimePicker { Format = DateTimePickerFormat.Short, Width = 120 };
+        _dtDate = new DateTimePicker { Format = DateTimePickerFormat.Custom, CustomFormat = "yyyy-MM-dd", Width = 136 };
         _dtStart = MakeTimePicker();
         _dtEnd = MakeTimePicker();
         _cmbTag = new ComboBox { Dock = DockStyle.Fill };
@@ -52,15 +53,16 @@ public sealed class ManualEntryForm : DpiForm
         grid.Controls.Add(MakeLabel("日期"), 0, 0);
         grid.Controls.Add(_dtDate, 1, 0);
         grid.Controls.Add(MakeLabel("时间段"), 0, 1);
-        var timeRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true }; // DPI 切换后按钮尺寸可能短暂失真，允许折行兜底：宁可换行也不裁掉
+        var timeRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Margin = Padding.Empty };
         timeRow.Controls.Add(_dtStart);
-        timeRow.Controls.Add(new Label { Text = "至", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(6, 6, 6, 0) });
+        timeRow.Controls.Add(new Label { Text = "至", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(8, 0, 8, 0) });
         timeRow.Controls.Add(_dtEnd);
         grid.Controls.Add(timeRow, 1, 1);
         grid.Controls.Add(MakeLabel("标签"), 0, 2);
         grid.Controls.Add(_cmbTag, 1, 2);
         grid.Controls.Add(MakeLabel("内容"), 0, 3);
-        var chooseHistory = new Button { Text = "从全部历史记录选择…", AutoSize = true, Visible = editing == null };
+        var chooseHistory = UiLayout.Button("从全部历史记录选择…");
+        chooseHistory.Visible = editing == null;
         chooseHistory.Click += (_, _) =>
         {
             using var picker = new WorkLogPickerForm(_db);
@@ -78,17 +80,16 @@ public sealed class ManualEntryForm : DpiForm
             Text = $"同步修改同一事项（共 {relatedCount} 条，含当前记录）",
             AutoSize = true, Checked = relatedCount > 1, Enabled = relatedCount > 1,
         };
-        var scope = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Visible = editing != null };
+        var scope = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.TopDown, WrapContents = false, Visible = editing != null, Margin = new Padding(0, 8, 0, 0) };
         scope.Controls.Add(_syncRelated);
-        scope.Controls.Add(new Label { Text = "同步内容和标签；日期、时间只修改当前条。", AutoSize = true });
+        scope.Controls.Add(new Label { Text = "同步内容和标签；日期、时间只修改当前条。", AutoSize = true, ForeColor = SystemColors.GrayText });
         grid.Controls.Add(scope, 1, 5);
 
-        var btnRow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, AutoSize = true };
-        var btnSave = new Button { Text = "保存", AutoSize = true };
+        var btnSave = UiLayout.Button("保存", primary: true);
         btnSave.Click += OnSave;
-        var btnCancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, AutoSize = true };
-        btnRow.Controls.Add(btnSave);
-        btnRow.Controls.Add(btnCancel);
+        var btnCancel = UiLayout.Button("取消");
+        btnCancel.DialogResult = DialogResult.Cancel;
+        var btnRow = UiLayout.ButtonRow(true, btnCancel, btnSave);
         grid.Controls.Add(btnRow, 1, 6);
 
         Controls.Add(grid);
@@ -107,7 +108,8 @@ public sealed class ManualEntryForm : DpiForm
 
     private static DateTimePicker MakeTimePicker() => new()
     {
-        Format = DateTimePickerFormat.Time,
+        Format = DateTimePickerFormat.Custom,
+        CustomFormat = "HH:mm",
         ShowUpDown = true,
         Width = 90,
     };
@@ -117,7 +119,7 @@ public sealed class ManualEntryForm : DpiForm
         Text = text,
         AutoSize = true,
         Anchor = AnchorStyles.Left,
-        Margin = new Padding(0, 6, 8, 0),
+        Margin = new Padding(0, 0, 8, 0),
     };
 
     private static DateTime ParseTimeOr(string? hhmm, DateTime fallback)

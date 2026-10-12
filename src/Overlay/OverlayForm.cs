@@ -38,6 +38,12 @@ public sealed class OverlayForm : Form
     private readonly Panel _logPanelOuter;
     private readonly FlowLayoutPanel _logFlow;
     private readonly Button _btnEye;
+    private readonly Label _lblToday;
+    private readonly FlowLayoutPanel _tagPanel;
+    private readonly TableLayoutPanel _actionRow;
+    private readonly Dictionary<Control, (Padding Margin, Padding Padding)> _spacing = new();
+    private int _layoutDpi = 96;
+    private sealed record ButtonLayout(int Height, int MinWidth, Padding Padding, Padding Margin);
     private bool _logsVisible; // 隐私开关：每次弹窗默认隐藏今日记录，点小眼睛才显示
     private List<WorkLogEntry> _todayLogs = new();
     private readonly Dictionary<string, Button> _tagButtons = new();
@@ -75,6 +81,7 @@ public sealed class OverlayForm : Form
             ColumnCount = 3,
             RowCount = 3,
             BackColor = Color.Transparent,
+            Margin = Padding.Empty,
         };
         center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         center.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -86,14 +93,25 @@ public sealed class OverlayForm : Form
         var card = new TableLayoutPanel
         {
             AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             AutoScroll = true, // 极端 DPI/小屏下内容超高时出滚动条，而不是把按钮裁没
             MinimumSize = new Size(640, 0),
             BackColor = CardBack,
             ForeColor = CardFore,
             Padding = new Padding(28, 22, 28, 22),
             ColumnCount = 1,
+            RowCount = 10,
             Anchor = AnchorStyles.None,
+            Margin = Padding.Empty,
         };
+        card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        for (var i = 0; i < card.RowCount; i++) card.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        card.RowStyles[3].SizeType = SizeType.Absolute;
+        card.RowStyles[3].Height = 82;
+        card.RowStyles[4].SizeType = SizeType.Absolute;
+        card.RowStyles[4].Height = 50;
+        card.RowStyles[6].SizeType = SizeType.Absolute;
+        card.RowStyles[6].Height = 0;
         _card = card;
 
         // 标题（M2-4 文案可自定义）。用户自定义文案可能含花括号，string.Format 会抛异常，
@@ -108,7 +126,7 @@ public sealed class OverlayForm : Form
         _lblTitle = lblTitle;
 
         // 倒计时（M2-5）
-        var countdownRow = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2 };
+        var countdownRow = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2 };
         countdownRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         countdownRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         _lblCountdown = new Label
@@ -123,35 +141,39 @@ public sealed class OverlayForm : Form
         countdownRow.Controls.Add(_progress, 1, 0);
         countdownRow.Margin = new Padding(0, 0, 0, 14);
 
-        var lblInput = new Label { Text = "这段时间在做什么？", AutoSize = true, Margin = new Padding(0, 0, 0, 4) };
+        var lblInput = new Label { Text = "这段时间在做什么？", AutoSize = true, Margin = new Padding(0, 0, 0, 6) };
 
         // M3-1 随手记输入框（多行）
         _txtInput = new TextBox
         {
             Multiline = true,
-            Height = 64,
+            AutoSize = false,
+            Height = 72,
             Dock = DockStyle.Fill,
             BackColor = Color.FromArgb(22, 22, 28),
             ForeColor = CardFore,
             BorderStyle = BorderStyle.FixedSingle,
         };
-        _txtInput.Margin = new Padding(0, 0, 0, 6);
+        _txtInput.Margin = new Padding(0, 0, 0, 10);
         _txtInput.TextChanged += (_, _) =>
         {
             if (!_suppressTextEvent) _manager.OnInputChanged(this, _txtInput.Text);
         };
 
         // 标签行：左侧点选式标签（M3-3），右侧独立的“保存”按钮
-        var tagRow = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2 };
+        var tagRow = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2 };
         tagRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         tagRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var tagPanel = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
             AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = true,
+            Margin = Padding.Empty,
         };
+        _tagPanel = tagPanel;
         foreach (var tag in config.Tags)
         {
             var b = MakeTagButton(tag);
@@ -159,50 +181,32 @@ public sealed class OverlayForm : Form
             tagPanel.Controls.Add(b);
             _tagButtons[tag] = b;
         }
-        _btnSave = new Button
-        {
-            Text = "保存",
-            AutoSize = true,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = AccentBlue,
-            ForeColor = Color.White,
-            Font = TrackFont(new Font(Font.FontFamily, 10F, FontStyle.Bold)),
-            Margin = new Padding(4, 0, 0, 0),
-            Padding = new Padding(12, 2, 12, 2),
-            Anchor = AnchorStyles.Right | AnchorStyles.Top,
-        };
+        _btnSave = CreateButton("保存", AccentBlue, 32, 90, new Padding(12, 3, 12, 3), Padding.Empty);
+        _btnSave.Font = TrackFont(new Font(Font.FontFamily, 10F, FontStyle.Bold));
+        _btnSave.Anchor = AnchorStyles.Right | AnchorStyles.Top;
         _btnSave.Click += (_, _) => _manager.OnSaveRequested();
         tagRow.Controls.Add(tagPanel, 0, 0);
         tagRow.Controls.Add(_btnSave, 1, 0);
-        tagRow.Margin = new Padding(0, 0, 0, 10);
+        tagRow.Margin = new Padding(0, 0, 0, 14);
 
         // 隐私开关（小眼睛）：默认隐藏今日记录内容，防止弹窗时被旁人看到
-        var todayRow = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3 };
+        var todayRow = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 3, Margin = new Padding(0, 0, 0, 8) };
         todayRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         todayRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         todayRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var lblToday = new Label
         {
-            Text = "—— 今天已记录 ——",
+            Text = "今天已记录",
             AutoSize = true,
             ForeColor = Color.FromArgb(150, 150, 160),
             Anchor = AnchorStyles.Left,
-            Margin = new Padding(0, 0, 0, 4),
+            Margin = Padding.Empty,
         };
-        _btnEye = new Button
-        {
-            Text = "👁 显示",
-            AutoSize = true,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = TagBack,
-            ForeColor = CardFore,
-            Anchor = AnchorStyles.Right,
-            Padding = new Padding(6, 0, 6, 0),
-            Margin = new Padding(0, 0, 0, 4),
-        };
+        _lblToday = lblToday;
+        _btnEye = CreateButton("显示今日", TagBack, 32, 92, new Padding(10, 3, 10, 3), Padding.Empty);
         _btnEye.Click += (_, _) => _manager.OnLogsVisibilityToggled();
         todayRow.Controls.Add(lblToday, 0, 0);
-        var history = MakeRowButton("全部历史 / 续记");
+        var history = CreateButton("全部历史续记", TagBack, 32, 124, new Padding(10, 3, 10, 3), new Padding(0, 0, 8, 0));
         history.Click += (_, _) => _manager.OnHistoryRequested();
         todayRow.Controls.Add(history, 1, 0);
         todayRow.Controls.Add(_btnEye, 2, 0);
@@ -214,6 +218,7 @@ public sealed class OverlayForm : Form
             Height = LogPanelHeight,
             AutoScroll = true,
             BackColor = Color.FromArgb(26, 26, 32),
+            Padding = new Padding(10),
             Margin = new Padding(0, 0, 0, 12),
             Visible = false,
         };
@@ -221,20 +226,26 @@ public sealed class OverlayForm : Form
         {
             Dock = DockStyle.Top,
             AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
+            Margin = Padding.Empty,
         };
         outer.Controls.Add(_logFlow);
         _logPanelOuter = outer;
+        _logPanelOuter.ClientSizeChanged += (_, _) => LayoutLogRows();
+        _logFlow.SizeChanged += (_, _) => LayoutLogRows();
 
         // 三按钮（M2-6/7/8）
-        var btnRow = new FlowLayoutPanel
+        var btnRow = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             AutoSize = true,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 5, RowCount = 1, Margin = Padding.Empty,
         };
+        for (var i = 0; i < 5; i++) btnRow.ColumnStyles.Add(new ColumnStyle(i % 2 == 0 ? SizeType.Percent : SizeType.Absolute, i % 2 == 0 ? 1 : 8));
+        _actionRow = btnRow;
         var actionFont = TrackFont(new Font("Microsoft YaHei UI", 10F, FontStyle.Bold));
         _btnDone = MakeActionButton("刚活动完", AccentGreen, actionFont);
         _btnDone.Click += (_, _) => _manager.OnAction("done");
@@ -242,36 +253,38 @@ public sealed class OverlayForm : Form
         btnSkip.Click += (_, _) => _manager.OnAction("skip");
         var btnPostpone = MakeActionButton($"推迟{config.PostponeMinutes}分钟", Color.FromArgb(120, 90, 30), actionFont);
         btnPostpone.Click += (_, _) => _manager.OnAction("postpone");
-        btnRow.Controls.Add(_btnDone);
-        btnRow.Controls.Add(btnSkip);
-        btnRow.Controls.Add(btnPostpone);
+        foreach (var button in new[] { _btnDone, btnSkip, btnPostpone })
+        {
+            button.Dock = DockStyle.Fill;
+            button.Tag = ((ButtonLayout)button.Tag!) with { Margin = Padding.Empty };
+        }
+        btnRow.Controls.Add(_btnDone, 0, 0);
+        btnRow.Controls.Add(btnSkip, 2, 0);
+        btnRow.Controls.Add(btnPostpone, 4, 0);
 
         var access = MakeRowButton("去其他应用复制 / 查看");
+        access.Tag = ((ButtonLayout)access.Tag!) with { Margin = new Padding(0, 0, 0, 12) };
         access.Click += (_, _) => _manager.OnAccessRequested();
 
         // 避免误解：倒计时只是建议，三个按钮都立即关窗，不用等
         var lblHint = new Label
         {
-            Text = "倒计时只是建议，不用等它走完——刚活动过就点「刚活动完」立即关窗，开始下一周期。",
+            Text = "倒计时仅作建议；活动过后可直接点击「刚活动完」。",
             AutoSize = true,
             ForeColor = Color.FromArgb(140, 140, 150),
-            Margin = new Padding(0, 8, 0, 0),
+            Margin = new Padding(0, 10, 0, 0),
         };
         _lblHint = lblHint;
 
-        card.Controls.Add(lblTitle);
-        card.Controls.Add(countdownRow);
-        card.Controls.Add(lblInput);
-        card.Controls.Add(_txtInput);
-        card.Controls.Add(tagRow);
-        card.Controls.Add(todayRow);
-        card.Controls.Add(outer);
-        card.Controls.Add(access);
-        card.Controls.Add(btnRow);
-        card.Controls.Add(lblHint);
+        var cardRows = new Control[] { lblTitle, countdownRow, lblInput, _txtInput, tagRow, todayRow, outer, access, btnRow, lblHint };
+        for (var i = 0; i < cardRows.Length; i++) card.Controls.Add(cardRows[i], 0, i);
 
         center.Controls.Add(card, 1, 1);
         Controls.Add(center);
+
+        foreach (var control in Descendants(card).Where(control => control is not Button))
+            _spacing[control] = (control.Margin, control.Padding);
+        _tagPanel.SizeChanged += (_, _) => UpdateTagRowHeight(Math.Max(1, _card.ClientSize.Width - _card.Padding.Horizontal));
 
         RefreshLogs(todayLogs);
 
@@ -289,6 +302,7 @@ public sealed class OverlayForm : Form
     public void RefreshLogs(List<WorkLogEntry> logs)
     {
         _todayLogs = logs;
+        _lblToday.Text = $"今天已记录 · {logs.Count} 条";
         ClearLogRows();
         if (!_logsVisible) return; // 隐私模式：隐藏时不渲染任何内容
         if (logs.Count == 0)
@@ -304,47 +318,52 @@ public sealed class OverlayForm : Form
         }
         foreach (var log in logs)
         {
-            var row = new FlowLayoutPanel
+            var row = new TableLayoutPanel
             {
-                AutoSize = true,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                Margin = new Padding(2),
+                AutoSize = false, Height = S(32), ColumnCount = 5, RowCount = 1,
+                Margin = new Padding(0, 0, 0, S(6)),
             };
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            for (var i = 0; i < 4; i++) row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             var text = log.EndTime ?? log.StartTime ?? "--:--";
             if (log.Tag is { Length: > 0 }) text += $" [{log.Tag}]";
             text += " " + Truncate(log.Content ?? "", 24);
             row.Controls.Add(new Label
             {
                 Text = text,
-                AutoSize = true,
+                Dock = DockStyle.Fill, AutoEllipsis = true, Height = S(32),
+                TextAlign = ContentAlignment.MiddleLeft,
                 ForeColor = CardFore,
-                Margin = new Padding(6, 7, 6, 3),
-            });
+                Margin = new Padding(0, 0, S(8), 0),
+            }, 0, 0);
             var captured = log;
             var btnContinue = MakeRowButton("继续");
             btnContinue.Click += (_, _) => _manager.OnContinueRequested(captured);
             var btnDelete = MakeRowButton("删除");
             btnDelete.ForeColor = Color.FromArgb(240, 160, 160);
             btnDelete.Click += (_, _) => _manager.OnDeleteRequested(captured);
-            row.Controls.Add(btnContinue);
+            row.Controls.Add(btnContinue, 1, 0);
             var edit = MakeRowButton("编辑");
             edit.Click += (_, _) => _manager.OnEditRequested(captured);
             var copy = MakeRowButton("复制");
             copy.Click += (_, _) => _manager.OnCopyRequested(captured, this);
-            row.Controls.Add(edit);
-            row.Controls.Add(copy);
-            row.Controls.Add(btnDelete);
+            btnDelete.Tag = ((ButtonLayout)btnDelete.Tag!) with { Margin = Padding.Empty };
+            ApplyButtonLayout(btnDelete);
+            row.Controls.Add(edit, 2, 0);
+            row.Controls.Add(copy, 3, 0);
+            row.Controls.Add(btnDelete, 4, 0);
             _logFlow.Controls.Add(row);
         }
+        LayoutLogRows();
     }
 
     /// <summary>小眼睛开关：显示/隐藏今日流水（由管理器同步到所有屏）。</summary>
     public void SetLogsVisible(bool visible)
     {
         _logsVisible = visible;
-        _btnEye.Text = visible ? "👁 隐藏" : "👁 显示";
+        _btnEye.Text = visible ? "隐藏今日" : "显示今日";
         _logPanelOuter.Visible = visible;
+        _card.RowStyles[6].Height = visible ? S(LogPanelHeight + 12) : 0;
         if (visible) RefreshLogs(_todayLogs);
         else ClearLogRows();
     }
@@ -355,16 +374,51 @@ public sealed class OverlayForm : Form
         foreach (var row in _logFlow.Controls.Cast<Control>().ToArray()) row.Dispose();
     }
 
-    private static Button MakeRowButton(string text) => new()
+    private Button MakeRowButton(string text) => CreateButton(text, TagBack, 32, 54, new Padding(10, 3, 10, 3), new Padding(0, 0, 6, 0));
+
+    private Button CreateButton(string text, Color back, int height, int minWidth, Padding padding, Padding margin)
     {
-        Text = text,
-        AutoSize = true,
-        FlatStyle = FlatStyle.Flat,
-        BackColor = TagBack,
-        ForeColor = CardFore,
-        Margin = new Padding(2),
-        Padding = new Padding(4, 0, 4, 0),
-    };
+        var button = new Button
+        {
+            Text = text, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlatStyle = FlatStyle.Flat, BackColor = back, ForeColor = CardFore,
+            Anchor = AnchorStyles.Left, Tag = new ButtonLayout(height, minWidth, padding, margin),
+        };
+        button.FlatAppearance.BorderColor = Color.FromArgb(82, 82, 98);
+        ApplyButtonLayout(button);
+        return button;
+    }
+
+    private int S(int value) => (int)Math.Round(value * _layoutDpi / 96.0);
+    private Padding ScalePadding(Padding padding) => new(S(padding.Left), S(padding.Top), S(padding.Right), S(padding.Bottom));
+    private void ApplyButtonLayout(Button button)
+    {
+        if (button.Tag is not ButtonLayout layout) return;
+        button.MinimumSize = new Size(S(layout.MinWidth), S(layout.Height));
+        button.Padding = ScalePadding(layout.Padding);
+        button.Margin = ScalePadding(layout.Margin);
+    }
+
+    private static IEnumerable<Control> Descendants(Control root)
+    {
+        foreach (Control child in root.Controls)
+        {
+            yield return child;
+            foreach (var nested in Descendants(child)) yield return nested;
+        }
+    }
+
+    private void LayoutLogRows()
+    {
+        var width = Math.Max(1, _logPanelOuter.ClientSize.Width - _logPanelOuter.Padding.Horizontal - S(20));
+        foreach (var row in _logFlow.Controls.OfType<TableLayoutPanel>())
+        {
+            row.Margin = new Padding(0, 0, 0, S(6));
+            foreach (var label in row.Controls.OfType<Label>()) label.Margin = new Padding(0, 0, S(8), 0);
+            var height = row.Controls.OfType<Button>().Select(button => button.GetPreferredSize(Size.Empty).Height).DefaultIfEmpty(S(32)).Max();
+            row.Size = new Size(width, height);
+        }
+    }
 
     private static string Truncate(string s, int max)
     {
@@ -372,28 +426,14 @@ public sealed class OverlayForm : Form
         return flat.Length > max ? flat[..max] + "…" : flat;
     }
 
-    private static Button MakeTagButton(string text) => new()
-    {
-        Text = text,
-        AutoSize = true,
-        FlatStyle = FlatStyle.Flat,
-        BackColor = TagBack,
-        ForeColor = CardFore,
-        Margin = new Padding(0, 0, 6, 4),
-        Padding = new Padding(6, 1, 6, 1),
-    };
+    private Button MakeTagButton(string text) => CreateButton(text, TagBack, 30, 0, new Padding(8, 3, 8, 3), new Padding(0, 0, 6, 6));
 
-    private static Button MakeActionButton(string text, Color back, Font font) => new()
+    private Button MakeActionButton(string text, Color back, Font font)
     {
-        Text = text,
-        AutoSize = true,
-        FlatStyle = FlatStyle.Flat,
-        BackColor = back,
-        ForeColor = Color.White,
-        Font = font,
-        Margin = new Padding(0, 0, 10, 0),
-        Padding = new Padding(12, 4, 12, 4),
-    };
+        var button = CreateButton(text, back, 38, 100, new Padding(16, 4, 16, 4), new Padding(0, 0, 8, 0));
+        button.Font = font;
+        return button;
+    }
 
     /// <summary>登记本窗体创建的字体，Dispose 时统一释放。</summary>
     private Font TrackFont(Font font)
@@ -425,6 +465,15 @@ public sealed class OverlayForm : Form
     {
         _btnSave.Enabled = enabled;
         _btnSave.Text = text;
+        UpdateTagRowHeight(Math.Max(1, _card.ClientSize.Width - _card.Padding.Horizontal));
+    }
+
+    private void UpdateTagRowHeight(int contentWidth)
+    {
+        var tagWidth = Math.Max(1, contentWidth - _btnSave.GetPreferredSize(Size.Empty).Width - S(12));
+        _tagPanel.MaximumSize = new Size(tagWidth, 0);
+        var height = Math.Max(_tagPanel.GetPreferredSize(new Size(tagWidth, 0)).Height, _btnSave.GetPreferredSize(Size.Empty).Height);
+        _card.RowStyles[4].Height = height + S(14);
     }
 
     public void UpdateCountdown(int remainingSec, int totalSec)
@@ -484,25 +533,39 @@ public sealed class OverlayForm : Form
 
     private void ApplyDpiScale(int dpi)
     {
+        _layoutDpi = dpi;
+        _card.SuspendLayout();
+        foreach (var (control, spacing) in _spacing)
+        {
+            control.Margin = ScalePadding(spacing.Margin);
+            control.Padding = ScalePadding(spacing.Padding);
+        }
+        foreach (var button in Descendants(_card).OfType<Button>()) ApplyButtonLayout(button);
         int S(int v) => (int)Math.Round(v * dpi / 96.0);
         // 高缩放小屏（如 1080p@200%，逻辑宽仅 960）下按本屏实际逻辑尺寸封顶，
         // 防止卡片越屏、底部按钮被裁掉
         var availableWidth = Math.Max(1, _screen.Bounds.Width - S(40));
-        var cardWidth = Math.Min(S(760), availableWidth);
+        var cardWidth = Math.Min(S(720), availableWidth);
         var contentWidth = Math.Max(1, cardWidth - S(56));
-        _card.MinimumSize = new Size(Math.Min(S(640), cardWidth), 0);
+        _card.MinimumSize = new Size(cardWidth, 0);
         _card.MaximumSize = new Size(cardWidth, Math.Max(1, _screen.Bounds.Height - S(40)));
         _card.Padding = new Padding(S(28), S(22), S(28), S(22));
         _lblTitle.MaximumSize = new Size(contentWidth, 0);
         _lblHint.MaximumSize = new Size(contentWidth, 0);
+        UpdateTagRowHeight(contentWidth);
         foreach (var button in _tagButtons.Values)
         {
             button.MaximumSize = new Size(Math.Max(1, contentWidth - S(100)), 0);
             button.AutoEllipsis = true;
         }
-        _txtInput.Height = S(64);
+        _card.RowStyles[3].Height = S(82);
+        _actionRow.ColumnStyles[1].Width = _actionRow.ColumnStyles[3].Width = S(8);
+        _card.RowStyles[6].Height = _logsVisible ? S(LogPanelHeight + 12) : 0;
+        _txtInput.Height = S(72);
         _logPanelOuter.Height = S(LogPanelHeight);
         _progress.Height = S(14);
+        _card.ResumeLayout(true);
+        LayoutLogRows();
     }
 
     protected override void Dispose(bool disposing)

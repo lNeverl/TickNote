@@ -7,6 +7,9 @@ using SedentaryReminder.Log;
 using SedentaryReminder.Overlay;
 using System.Reflection;
 
+Application.SetHighDpiMode(args.Contains("--dpi-unaware") ? HighDpiMode.DpiUnaware : HighDpiMode.PerMonitorV2);
+Application.EnableVisualStyles();
+
 var testDir = Path.Combine(Path.GetTempPath(), "SedentaryReminderRegression_" + Guid.NewGuid().ToString("N") + ";data");
 Directory.CreateDirectory(testDir);
 try
@@ -78,7 +81,7 @@ try
     CheckLegacyWorkItems(Path.Combine(testDir, "legacy"));
     CheckLogUi(Path.Combine(testDir, "ui"));
 
-    Console.WriteLine("回归检查通过：流水日期、WAL 导出与迁移、周报期次、报告副本、DPI 往返缩放、跨天事项关联与事务回滚、旧库升级、历史筛选与日历、提醒收起和恢复。");
+    Console.WriteLine("回归检查通过：流水日期、WAL 导出与迁移、周报期次、报告副本、DPI 往返缩放、跨天事项关联与事务回滚、旧库升级、历史筛选与日历、提醒收起和恢复、按钮对齐与搜索栏响应布局。");
 }
 finally
 {
@@ -306,6 +309,7 @@ static void CheckLogUiOnSta(string dir)
     Check(sync.Checked && sync.Text.Contains("2 条"), "关联编辑默认同步或影响数量提示错误");
     using var picker = new WorkLogPickerForm(db);
     Check(Descendants(picker).OfType<ListView>().Single().Items.Count == 2, "续记选择器未列出所有历史记录");
+    CheckUiLayout(db);
 
     // 构造真实多屏窗口后，收起状态再重建；不等计时器，不向用户数据目录写入。
     var manager = new OverlayManager(new AppConfig(), db);
@@ -363,6 +367,94 @@ static IEnumerable<Control> Descendants(Control root)
         yield return child;
         foreach (var descendant in Descendants(child)) yield return descendant;
     }
+}
+
+static void CheckUiLayout(Database db)
+{
+    using var picker = new WorkLogPickerForm(db) { Opacity = 0, ShowInTaskbar = false };
+    picker.Show();
+    Application.DoEvents();
+    var browser = Descendants(picker).OfType<WorkLogBrowser>().Single();
+    var date = Field<Button>(browser, "_dateButton");
+    var refresh = Field<Button>(browser, "_refresh");
+    var host = Field<Panel>(browser, "_searchHost");
+    var filters = Field<TableLayoutPanel>(browser, "_filters");
+    CheckNear(host.Top, date.Top, 1, "宽窗口搜索框与日期按钮未对齐");
+    CheckNear(host.Height, date.Height, 1, "搜索框与按钮高度不一致");
+    CheckNear(refresh.Top, date.Top, 1, "刷新与日期按钮未对齐");
+    var factor = picker.DeviceDpi / 96.0;
+    picker.ClientSize = new Size((int)(500 * factor), (int)(480 * factor));
+    picker.PerformLayout();
+    Check(host.Top > date.Bottom, "窄窗口搜索栏未换到下一行");
+    CheckNear(host.Top, refresh.Top, 1, "窄窗口搜索栏与刷新按钮未对齐");
+    Check(host.Left >= 0 && host.Right <= filters.ClientSize.Width && refresh.Right <= filters.ClientSize.Width, "窄窗口工具栏溢出");
+    var narrowList = Descendants(browser).OfType<ListView>().Single();
+    Check(narrowList.Columns.Cast<ColumnHeader>().Sum(column => column.Width) <= narrowList.ClientSize.Width, "窄窗口隐藏了来源列，需要额外横向滚动");
+    picker.ClientSize = new Size((int)(800 * factor), (int)(530 * factor));
+    picker.PerformLayout();
+    CheckNear(host.Top, date.Top, 1, "放宽窗口后搜索栏未恢复同一行");
+    var search = Field<TextBox>(browser, "_search");
+    search.Text = "不存在的内容";
+    Field<Button>(browser, "_clearSearch").PerformClick();
+    Check(search.TextLength == 0 && Descendants(browser).OfType<ListView>().Single().Items.Count == db.GetLogs("").Count, "清空搜索未恢复列表");
+    var footer = Descendants(picker).OfType<Button>().Where(button => button.Text is "取消" or "继续这件事").ToArray();
+    CheckNear(footer[0].Height, footer[1].Height, 1, "续记选择器底部按钮高度不一致");
+    CheckNear(footer[0].Top, footer[1].Top, 1, "续记选择器底部按钮未对齐");
+
+    using var access = new ReminderAccessForm("草稿", () => { }) { Opacity = 0, ShowInTaskbar = false };
+    access.Show();
+    var accessButtons = Descendants(access).OfType<Button>().ToArray();
+    foreach (var button in accessButtons)
+    {
+        CheckNear(button.Top, accessButtons[0].Top, 1, "返回入口按钮未处于同一行");
+        CheckNear(button.Width, accessButtons[0].Width, 2, "返回入口按钮宽度不一致");
+        CheckNear(button.Height, accessButtons[0].Height, 1, "返回入口按钮高度不一致");
+    }
+
+    var config = new AppConfig();
+    config.Tags.AddRange(new[] { "需要连续多天跟进的长项目标签", "另一个需要换行的项目标签", "较长的验证与排查事项" });
+    var logs = Enumerable.Range(0, 12).Select(index => new WorkLogEntry
+    {
+        EndTime = "09:50", Tag = index % 2 == 0 ? "开发" : "较长标签",
+        Content = $"第 {index + 1} 条项目记录，用于验证每行按钮不会随内容长短移动。",
+    }).ToList();
+    using var overlay = new OverlayForm(new OverlayManager(config, db), config, Screen.PrimaryScreen!, logs) { Opacity = 0 };
+    Field<System.Windows.Forms.Timer>(overlay, "_fadeTimer").Stop();
+    overlay.UpdateCountdown(300, 300);
+    overlay.SetLogsVisible(true);
+    overlay.Show();
+    Application.DoEvents();
+    var eye = Field<Button>(overlay, "_btnEye");
+    var history = Descendants(overlay).OfType<Button>().Single(button => button.Text == "全部历史续记");
+    CheckNear(eye.Top, history.Top, 1, "显示与历史续记按钮未对齐");
+    CheckNear(eye.Height, history.Height, 1, "显示与历史续记按钮高度不一致");
+    var tags = Field<FlowLayoutPanel>(overlay, "_tagPanel");
+    var save = Field<Button>(overlay, "_btnSave");
+    var expectedTagHeight = Math.Max(tags.GetPreferredSize(new Size(tags.Width, 0)).Height, save.Height);
+    CheckNear(tags.Parent!.Height, expectedTagHeight, 2, "标签区域被自动布局撑出多余空白");
+    var flow = Field<FlowLayoutPanel>(overlay, "_logFlow");
+    var rows = flow.Controls.OfType<TableLayoutPanel>().ToArray();
+    Check(rows.Length == logs.Count, "流水行数量错误");
+    var firstButtons = rows[0].Controls.OfType<Button>().ToArray();
+    foreach (var row in rows)
+    {
+        Check(row.Width <= flow.ClientSize.Width, "流水操作行越过可见区域");
+        Check(row.Controls.OfType<Label>().Single().Width > row.Width / 3, "流水内容被按钮过度挤占");
+        var buttons = row.Controls.OfType<Button>().ToArray();
+        for (var i = 0; i < buttons.Length; i++)
+        {
+            CheckNear(buttons[i].Left, firstButtons[i].Left, 1, "各条流水操作按钮未按列对齐");
+            Check(buttons[i].Right <= row.ClientSize.Width && buttons[i].Bottom <= row.ClientSize.Height, "流水按钮溢出或被裁切");
+        }
+    }
+    var card = Field<TableLayoutPanel>(overlay, "_card");
+    var expandedHeight = card.Height;
+    overlay.SetLogsVisible(false);
+    Check(card.Height < expandedHeight, "隐藏流水后保留了无意义空白");
+    overlay.SetLogsVisible(true);
+    CheckNear(card.Height, expandedHeight, 2, "反复展开流水造成卡片高度漂移");
+    var actions = Field<TableLayoutPanel>(overlay, "_actionRow").Controls.OfType<Button>().ToArray();
+    foreach (var action in actions) CheckNear(action.Width, actions[0].Width, 2, "提醒三个操作按钮宽度不一致");
 }
 
 static T Field<T>(object instance, string name) => (T)instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(instance)!;
