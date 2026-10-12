@@ -1,4 +1,5 @@
 using SedentaryReminder.Data;
+using SedentaryReminder.Log;
 
 namespace SedentaryReminder.Overlay;
 
@@ -29,6 +30,12 @@ public sealed class OverlayManager
     private int _countdownRemainingSec;
     private IntPtr _prevForeground;
     private bool _logsVisible; // 小眼睛状态，所有屏一致
+    private ReminderAccessForm? _accessForm;
+    private Form? _auxiliaryForm;
+    private string? _continuedContent;
+    private string? _continuedTag;
+
+    public bool IsTemporarilyReleased => _accessForm != null || _auxiliaryForm != null;
 
     public bool IsOpen { get; private set; }
 
@@ -55,10 +62,13 @@ public sealed class OverlayManager
         _inputText = "";
         _selectedTag = null;
         _continueFromId = null;
+        _continuedContent = null;
+        _continuedTag = null;
         _logsVisible = false; // 每次弹窗默认隐藏今日记录（隐私）
         _countdownTotalSec = Math.Max(1, _config.BreakMinutes) * 60;
         _countdownRemainingSec = _countdownTotalSec;
         _prevForeground = NativeMethods.GetForegroundWindow(); // N5：关窗后恢复焦点
+        _db.WorkLogsChanged += OnWorkLogsChanged;
 
         CreateForms();
         StartCountdown();
@@ -71,21 +81,24 @@ public sealed class OverlayManager
         {
             // 先铺半透明背景层，再放不透明卡片层（z 序：卡片在上）
             var dim = new DimForm(screen);
-            dim.Show();
+            if (!IsTemporarilyReleased) dim.Show();
             _dimForms.Add(dim);
 
             var form = new OverlayForm(this, _config, screen, logs);
             _forms.Add(form);
             dim.Click += (_, _) => form.Activate(); // 点到背景时把焦点还给卡片层（ESC 才能用）
-            form.Show();
+            if (!IsTemporarilyReleased) form.Show();
             form.SetInputText(_inputText);       // 热插拔重建时保留状态（N4）
             form.SetSelectedTag(_selectedTag);
             form.SetLogsVisible(_logsVisible);
         }
         // M2-12：主屏弹窗输入框获得焦点
         var primary = _forms.FirstOrDefault(f => f.IsPrimary);
-        primary?.Activate();
-        primary?.FocusInput();
+        if (!IsTemporarilyReleased)
+        {
+            primary?.Activate();
+            primary?.FocusInput();
+        }
     }
 
     private List<WorkLogEntry> TodayLogs() => _db.GetLogs(DateTime.Today.ToString("yyyy-MM-dd"));
@@ -112,7 +125,10 @@ public sealed class OverlayManager
     private void UpdateCountdownOnForms()
     {
         foreach (var f in _forms)
+        {
             f.UpdateCountdown(_countdownRemainingSec, _countdownTotalSec);
+            if (_countdownRemainingSec == 0) f.OnCountdownFinished();
+        }
     }
 
     // ---------------- 状态同步（供 OverlayForm 回调） ----------------
@@ -135,6 +151,8 @@ public sealed class OverlayManager
     internal void OnContinueRequested(WorkLogEntry entry)
     {
         _continueFromId = entry.Id;
+        _continuedContent = entry.Content;
+        _continuedTag = entry.Tag;
         _selectedTag = entry.Tag;
         _inputText = entry.Content ?? "";
         foreach (var f in _forms)
@@ -142,7 +160,104 @@ public sealed class OverlayManager
             f.SetInputText(_inputText);
             f.SetSelectedTag(_selectedTag);
         }
-        _forms.FirstOrDefault(f => f.IsPrimary)?.FocusInput();
+        _accessForm?.SetDraft(_inputText);
+        if (!IsTemporarilyReleased) _forms.FirstOrDefault(f => f.IsPrimary)?.FocusInput();
+    }
+
+    internal void OnHistoryRequested()
+    {
+        if (_auxiliaryForm != null) { _auxiliaryForm.Activate(); return; }
+        using var picker = new WorkLogPickerForm(_db);
+        RunAuxiliaryDialog(picker, () =>
+        {
+            if (picker.SelectedEntry != null) OnContinueRequested(picker.SelectedEntry);
+        });
+    }
+
+    internal void OnEditRequested(WorkLogEntry entry)
+    {
+        if (_auxiliaryForm != null) { _auxiliaryForm.Activate(); return; }
+        using var editor = new ManualEntryForm(_db, _config, entry);
+        RunAuxiliaryDialog(editor, () => { });
+    }
+
+    private void RunAuxiliaryDialog(Form dialog, Action accepted)
+    {
+        if (!IsOpen) return;
+        var restore = _accessForm == null;
+        _auxiliaryForm = dialog;
+        HideFullScreen();
+        try
+        {
+            var result = _accessForm == null ? dialog.ShowDialog() : dialog.ShowDialog(_accessForm);
+            if (result == DialogResult.OK && IsOpen) accepted();
+        }
+        finally
+        {
+            _auxiliaryForm = null;
+            if (restore && IsOpen) RestoreFullScreen();
+        }
+    }
+
+    internal void OnCopyRequested(WorkLogEntry entry, Form owner)
+    {
+        if (string.IsNullOrEmpty(entry.Content)) return;
+        try { Clipboard.SetText(entry.Content); }
+        catch (System.Runtime.InteropServices.ExternalException) { MessageBox.Show(owner, "剪贴板正被占用，请稍后重试。", "复制失败"); }
+    }
+
+    internal void OnAccessRequested()
+    {
+        if (!IsOpen) return;
+        if (_accessForm != null) { _accessForm.Activate(); return; }
+        HideFullScreen();
+        var access = new ReminderAccessForm(_inputText, OnHistoryRequested);
+        _accessForm = access;
+        access.FormClosed += (_, _) =>
+        {
+            if (!ReferenceEquals(_accessForm, access)) return;
+            _accessForm = null;
+            if (IsOpen) RestoreFullScreen();
+        };
+        access.Show();
+    }
+
+    private void HideFullScreen()
+    {
+        foreach (var form in _forms) form.Hide();
+        foreach (var dim in _dimForms) dim.Hide();
+    }
+
+    private void RestoreFullScreen()
+    {
+        foreach (var dim in _dimForms) dim.Show();
+        foreach (var form in _forms) form.Show();
+        UpdateCountdownOnForms();
+        _forms.FirstOrDefault(form => form.IsPrimary)?.FocusInput();
+    }
+
+    private void OnWorkLogsChanged()
+    {
+        if (_continueFromId is long id)
+        {
+            var latest = _db.GetWorkLog(id);
+            if (latest == null) _continueFromId = null;
+            else
+            {
+                // 只更新仍与所选事项相同的草稿，保留用户已经自行改写的内容。
+                if (_inputText == _continuedContent) _inputText = latest.Content ?? "";
+                if (_selectedTag == _continuedTag) _selectedTag = latest.Tag;
+                _continuedContent = latest.Content;
+                _continuedTag = latest.Tag;
+                foreach (var form in _forms)
+                {
+                    form.SetInputText(_inputText);
+                    form.SetSelectedTag(_selectedTag);
+                }
+                _accessForm?.SetDraft(_inputText);
+            }
+        }
+        RefreshLogsAll();
     }
 
     /// <summary>小眼睛：显示/隐藏今日流水，任一屏点击所有屏同步。</summary>
@@ -260,6 +375,12 @@ public sealed class OverlayManager
 
     private void Cleanup()
     {
+        IsOpen = false;
+        _db.WorkLogsChanged -= OnWorkLogsChanged;
+        var access = _accessForm;
+        _accessForm = null;
+        access?.Dispose();
+        _auxiliaryForm?.Close();
         _countdownTimer?.Stop();
         _countdownTimer?.Dispose();
         _countdownTimer = null;
@@ -273,7 +394,6 @@ public sealed class OverlayManager
         _forms.Clear();
         foreach (var d in _dimForms) { d.Hide(); d.Dispose(); }
         _dimForms.Clear();
-        IsOpen = false;
 
         // N5 / M2-12：恢复原窗口键盘焦点
         if (_prevForeground != IntPtr.Zero)

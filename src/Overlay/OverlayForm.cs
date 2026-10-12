@@ -177,8 +177,9 @@ public sealed class OverlayForm : Form
         tagRow.Margin = new Padding(0, 0, 0, 10);
 
         // 隐私开关（小眼睛）：默认隐藏今日记录内容，防止弹窗时被旁人看到
-        var todayRow = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2 };
+        var todayRow = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3 };
         todayRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        todayRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         todayRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var lblToday = new Label
         {
@@ -201,7 +202,10 @@ public sealed class OverlayForm : Form
         };
         _btnEye.Click += (_, _) => _manager.OnLogsVisibilityToggled();
         todayRow.Controls.Add(lblToday, 0, 0);
-        todayRow.Controls.Add(_btnEye, 1, 0);
+        var history = MakeRowButton("全部历史 / 续记");
+        history.Click += (_, _) => _manager.OnHistoryRequested();
+        todayRow.Controls.Add(history, 1, 0);
+        todayRow.Controls.Add(_btnEye, 2, 0);
 
         // M2-9 今日流水面板（继续 / 删除），默认折叠隐藏
         var outer = new Panel
@@ -242,6 +246,9 @@ public sealed class OverlayForm : Form
         btnRow.Controls.Add(btnSkip);
         btnRow.Controls.Add(btnPostpone);
 
+        var access = MakeRowButton("去其他应用复制 / 查看");
+        access.Click += (_, _) => _manager.OnAccessRequested();
+
         // 避免误解：倒计时只是建议，三个按钮都立即关窗，不用等
         var lblHint = new Label
         {
@@ -259,6 +266,7 @@ public sealed class OverlayForm : Form
         card.Controls.Add(tagRow);
         card.Controls.Add(todayRow);
         card.Controls.Add(outer);
+        card.Controls.Add(access);
         card.Controls.Add(btnRow);
         card.Controls.Add(lblHint);
 
@@ -281,7 +289,7 @@ public sealed class OverlayForm : Form
     public void RefreshLogs(List<WorkLogEntry> logs)
     {
         _todayLogs = logs;
-        _logFlow.Controls.Clear();
+        ClearLogRows();
         if (!_logsVisible) return; // 隐私模式：隐藏时不渲染任何内容
         if (logs.Count == 0)
         {
@@ -320,6 +328,12 @@ public sealed class OverlayForm : Form
             btnDelete.ForeColor = Color.FromArgb(240, 160, 160);
             btnDelete.Click += (_, _) => _manager.OnDeleteRequested(captured);
             row.Controls.Add(btnContinue);
+            var edit = MakeRowButton("编辑");
+            edit.Click += (_, _) => _manager.OnEditRequested(captured);
+            var copy = MakeRowButton("复制");
+            copy.Click += (_, _) => _manager.OnCopyRequested(captured, this);
+            row.Controls.Add(edit);
+            row.Controls.Add(copy);
             row.Controls.Add(btnDelete);
             _logFlow.Controls.Add(row);
         }
@@ -332,7 +346,13 @@ public sealed class OverlayForm : Form
         _btnEye.Text = visible ? "👁 隐藏" : "👁 显示";
         _logPanelOuter.Visible = visible;
         if (visible) RefreshLogs(_todayLogs);
-        else _logFlow.Controls.Clear();
+        else ClearLogRows();
+    }
+
+    private void ClearLogRows()
+    {
+        // Controls.Clear 不会释放旧行及其事件闭包，持续刷新时必须显式 Dispose。
+        foreach (var row in _logFlow.Controls.Cast<Control>().ToArray()) row.Dispose();
     }
 
     private static Button MakeRowButton(string text) => new()

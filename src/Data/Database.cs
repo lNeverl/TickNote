@@ -13,6 +13,7 @@ public sealed class WorkLogEntry
     public string? Content { get; set; }
     public string Source { get; set; } = "popup"; // popup / manual / continue
     public long? ContinueFrom { get; set; }
+    public string? WorkItemId { get; set; } // 同一事项的持久关联，删除最早记录不影响其余记录
 }
 
 /// <summary>提醒事件（久坐统计用，表 reminder_event）。</summary>
@@ -42,6 +43,11 @@ public sealed class Database : IDisposable
 {
     private readonly SqliteConnection _conn;
 
+    public event Action? WorkLogsChanged;
+
+    private const string LogColumns = "id, log_date, start_time, end_time, tag, content, source, continue_from, work_item_id";
+    private const string NormalizedContent = "trim(COALESCE(content, ''), char(9) || char(10) || char(13) || ' ')";
+
     public Database(string dataDir)
     {
         Directory.CreateDirectory(dataDir);
@@ -70,7 +76,8 @@ public sealed class Database : IDisposable
                 tag           TEXT,
                 content       TEXT,
                 source        TEXT DEFAULT 'popup',
-                continue_from INTEGER
+                continue_from INTEGER,
+                work_item_id  TEXT
             );
             CREATE TABLE IF NOT EXISTS reminder_event (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -91,16 +98,86 @@ public sealed class Database : IDisposable
             CREATE INDEX IF NOT EXISTS idx_report_period ON report(report_type, period_key);
             """;
         cmd.ExecuteNonQuery();
+        MigrateWorkItems();
+    }
+
+    private void MigrateWorkItems()
+    {
+        using var transaction = _conn.BeginTransaction();
+        using var cmd = _conn.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = "PRAGMA table_info(work_log);";
+        bool hasColumn;
+        using (var reader = cmd.ExecuteReader())
+        {
+            hasColumn = false;
+            while (reader.Read()) hasColumn |= reader.GetString(1) == "work_item_id";
+        }
+        if (!hasColumn)
+        {
+            cmd.CommandText = "ALTER TABLE work_log ADD COLUMN work_item_id TEXT;";
+            cmd.ExecuteNonQuery();
+        }
+        cmd.CommandText = "SELECT COUNT(*) FROM work_log WHERE work_item_id IS NULL;";
+        if ((long)cmd.ExecuteScalar()! > 0)
+        {
+            cmd.CommandText = $"SELECT {LogColumns} FROM work_log ORDER BY id;";
+            var logs = ReadLogs(cmd);
+            var parents = logs.ToDictionary(log => log.Id, log => log.Id);
+            long Root(long id)
+            {
+                while (parents[id] != id)
+                {
+                    parents[id] = parents[parents[id]];
+                    id = parents[id];
+                }
+                return id;
+            }
+            void Join(long left, long right) => parents[Root(left)] = Root(right);
+            var contents = new Dictionary<string, long>(StringComparer.Ordinal);
+            foreach (var log in logs)
+            {
+                if (log.ContinueFrom is long previous && parents.ContainsKey(previous)) Join(log.Id, previous);
+                var content = log.Content?.Trim() ?? "";
+                if (content.Length == 0) continue;
+                if (contents.TryGetValue(content, out var same)) Join(log.Id, same);
+                else contents[content] = log.Id;
+            }
+            var groups = new Dictionary<long, string>();
+            foreach (var log in logs.Where(log => log.WorkItemId != null))
+                groups.TryAdd(Root(log.Id), log.WorkItemId!);
+            foreach (var log in logs.Where(log => log.WorkItemId == null))
+            {
+                var root = Root(log.Id);
+                if (!groups.TryGetValue(root, out var group)) groups[root] = group = Guid.NewGuid().ToString("N");
+                cmd.CommandText = "UPDATE work_log SET work_item_id=$group WHERE id=$id;";
+                cmd.Parameters.Clear();
+                cmd.Parameters.AddWithValue("$group", group);
+                cmd.Parameters.AddWithValue("$id", log.Id);
+                cmd.ExecuteNonQuery();
+            }
+        }
+        cmd.CommandText = "CREATE INDEX IF NOT EXISTS idx_work_log_item ON work_log(work_item_id);";
+        cmd.ExecuteNonQuery();
+        transaction.Commit();
     }
 
     // ---------------- work_log ----------------
 
     public long InsertWorkLog(WorkLogEntry e)
     {
+        using var transaction = _conn.BeginTransaction();
         using var cmd = _conn.CreateCommand();
+        cmd.Transaction = transaction;
+        // 续记时若改成了另一件事，按新内容建立关联；完全相同的内容自动归为同一事项。
+        cmd.CommandText = $"SELECT work_item_id FROM work_log WHERE {NormalizedContent}=$c AND length($c)>0 ORDER BY CASE WHEN id=$cf THEN 0 ELSE 1 END, id DESC LIMIT 1;";
+        cmd.Parameters.AddWithValue("$c", e.Content?.Trim() ?? "");
+        cmd.Parameters.AddWithValue("$cf", (object?)e.ContinueFrom ?? DBNull.Value);
+        e.WorkItemId = cmd.ExecuteScalar() as string ?? Guid.NewGuid().ToString("N");
+        cmd.Parameters.Clear();
         cmd.CommandText = """
-            INSERT INTO work_log (log_date, start_time, end_time, tag, content, source, continue_from)
-            VALUES ($d, $st, $et, $tag, $c, $src, $cf); SELECT last_insert_rowid();
+            INSERT INTO work_log (log_date, start_time, end_time, tag, content, source, continue_from, work_item_id)
+            VALUES ($d, $st, $et, $tag, $c, $src, $cf, $item); SELECT last_insert_rowid();
             """;
         cmd.Parameters.AddWithValue("$d", e.LogDate);
         cmd.Parameters.AddWithValue("$st", (object?)e.StartTime ?? DBNull.Value);
@@ -109,14 +186,39 @@ public sealed class Database : IDisposable
         cmd.Parameters.AddWithValue("$c", (object?)e.Content ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$src", e.Source);
         cmd.Parameters.AddWithValue("$cf", (object?)e.ContinueFrom ?? DBNull.Value);
-        return (long)(cmd.ExecuteScalar() ?? 0L);
+        cmd.Parameters.AddWithValue("$item", e.WorkItemId);
+        e.Id = (long)(cmd.ExecuteScalar() ?? 0L);
+        transaction.Commit();
+        WorkLogsChanged?.Invoke();
+        return e.Id;
     }
 
-    public void UpdateWorkLog(WorkLogEntry e)
+    public void UpdateWorkLog(WorkLogEntry e, bool syncRelated = false)
     {
+        using var transaction = _conn.BeginTransaction();
+        var original = GetWorkLog(e.Id, transaction) ?? throw new InvalidOperationException("这条记录已被删除，请刷新后重试。");
+        var itemId = original.WorkItemId!;
+        if (syncRelated && (original.Content != e.Content || original.Tag != e.Tag))
+        {
+            using var related = RelatedLogsCommand(original, transaction);
+            var ids = ReadLogs(related).Select(log => log.WorkItemId!).Distinct().ToList();
+            using var sync = _conn.CreateCommand();
+            sync.Transaction = transaction;
+            for (var i = 0; i < ids.Count; i++) sync.Parameters.AddWithValue($"$g{i}", ids[i]);
+            sync.CommandText = $"UPDATE work_log SET content=$c, tag=$tag, work_item_id=$item WHERE work_item_id IN ({string.Join(",", ids.Select((_, i) => $"$g{i}"))});";
+            sync.Parameters.AddWithValue("$c", (object?)e.Content ?? DBNull.Value);
+            sync.Parameters.AddWithValue("$tag", (object?)e.Tag ?? DBNull.Value);
+            sync.Parameters.AddWithValue("$item", itemId);
+            sync.ExecuteNonQuery();
+        }
+        else if (!syncRelated && (original.Content != e.Content || original.Tag != e.Tag))
+        {
+            itemId = Guid.NewGuid().ToString("N");
+        }
         using var cmd = _conn.CreateCommand();
+        cmd.Transaction = transaction;
         cmd.CommandText = """
-            UPDATE work_log SET log_date=$d, start_time=$st, end_time=$et, tag=$tag, content=$c WHERE id=$id;
+            UPDATE work_log SET log_date=$d, start_time=$st, end_time=$et, tag=$tag, content=$c, work_item_id=$item WHERE id=$id;
             """;
         cmd.Parameters.AddWithValue("$d", e.LogDate);
         cmd.Parameters.AddWithValue("$st", (object?)e.StartTime ?? DBNull.Value);
@@ -124,7 +226,11 @@ public sealed class Database : IDisposable
         cmd.Parameters.AddWithValue("$tag", (object?)e.Tag ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$c", (object?)e.Content ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$id", e.Id);
+        cmd.Parameters.AddWithValue("$item", itemId);
         cmd.ExecuteNonQuery();
+        e.WorkItemId = itemId;
+        transaction.Commit();
+        WorkLogsChanged?.Invoke();
     }
 
     public void DeleteWorkLog(long id)
@@ -133,6 +239,53 @@ public sealed class Database : IDisposable
         cmd.CommandText = "DELETE FROM work_log WHERE id=$id;";
         cmd.Parameters.AddWithValue("$id", id);
         cmd.ExecuteNonQuery();
+        WorkLogsChanged?.Invoke();
+    }
+
+    public WorkLogEntry? GetWorkLog(long id) => GetWorkLog(id, null);
+
+    private WorkLogEntry? GetWorkLog(long id, SqliteTransaction? transaction)
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = $"SELECT {LogColumns} FROM work_log WHERE id=$id;";
+        cmd.Parameters.AddWithValue("$id", id);
+        return ReadLogs(cmd).FirstOrDefault();
+    }
+
+    public List<WorkLogEntry> GetRelatedLogs(long id)
+    {
+        var entry = GetWorkLog(id);
+        if (entry == null) return new();
+        using var cmd = RelatedLogsCommand(entry, null);
+        return ReadLogs(cmd);
+    }
+
+    private SqliteCommand RelatedLogsCommand(WorkLogEntry entry, SqliteTransaction? transaction)
+    {
+        var cmd = _conn.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = $"""
+            SELECT {LogColumns} FROM work_log WHERE work_item_id IN (
+                SELECT work_item_id FROM work_log WHERE work_item_id=$item
+                OR (length($c)>0 AND {NormalizedContent}=$c)
+            ) ORDER BY log_date, end_time, id;
+            """;
+        cmd.Parameters.AddWithValue("$item", (object?)entry.WorkItemId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$c", entry.Content?.Trim() ?? "");
+        return cmd;
+    }
+
+    public List<DateTime> GetLogDates()
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "SELECT DISTINCT log_date FROM work_log ORDER BY log_date DESC;";
+        using var reader = cmd.ExecuteReader();
+        var dates = new List<DateTime>();
+        while (reader.Read())
+            if (DateTime.TryParseExact(reader.GetString(0), "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var date)) dates.Add(date);
+        return dates;
     }
 
     /// <summary>查询某一天的流水；date 为空串时查全部。按时间升序。</summary>
@@ -141,11 +294,11 @@ public sealed class Database : IDisposable
         using var cmd = _conn.CreateCommand();
         if (date.Length == 0)
         {
-            cmd.CommandText = "SELECT id, log_date, start_time, end_time, tag, content, source, continue_from FROM work_log ORDER BY log_date, end_time, id;";
+            cmd.CommandText = $"SELECT {LogColumns} FROM work_log ORDER BY log_date, end_time, id;";
         }
         else
         {
-            cmd.CommandText = "SELECT id, log_date, start_time, end_time, tag, content, source, continue_from FROM work_log WHERE log_date=$d ORDER BY end_time, id;";
+            cmd.CommandText = $"SELECT {LogColumns} FROM work_log WHERE log_date=$d ORDER BY end_time, id;";
             cmd.Parameters.AddWithValue("$d", date);
         }
         return ReadLogs(cmd);
@@ -155,8 +308,8 @@ public sealed class Database : IDisposable
     public List<WorkLogEntry> GetLogsRange(string from, string to)
     {
         using var cmd = _conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT id, log_date, start_time, end_time, tag, content, source, continue_from
+        cmd.CommandText = $"""
+            SELECT {LogColumns}
             FROM work_log WHERE log_date >= $f AND log_date <= $t ORDER BY log_date, end_time, id;
             """;
         cmd.Parameters.AddWithValue("$f", from);
@@ -180,6 +333,7 @@ public sealed class Database : IDisposable
                 Content = r.IsDBNull(5) ? null : r.GetString(5),
                 Source = r.IsDBNull(6) ? "popup" : r.GetString(6),
                 ContinueFrom = r.IsDBNull(7) ? null : r.GetInt64(7),
+                WorkItemId = r.IsDBNull(8) ? null : r.GetString(8),
             });
         }
         return list;

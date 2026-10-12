@@ -15,6 +15,8 @@ public sealed class ManualEntryForm : DpiForm
     private readonly DateTimePicker _dtEnd;
     private readonly ComboBox _cmbTag;
     private readonly TextBox _txtContent;
+    private readonly CheckBox _syncRelated;
+    private long? _continueFromId;
 
     public ManualEntryForm(Database db, AppConfig config, WorkLogEntry? editing = null, DateTime? defaultDate = null)
     {
@@ -26,10 +28,10 @@ public sealed class ManualEntryForm : DpiForm
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        ClientSize = new Size(460, 300);
+        ClientSize = new Size(540, 380);
         Font = new Font("Microsoft YaHei UI", 9F);
 
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(14), ColumnCount = 2, RowCount = 6 };
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(14), ColumnCount = 2, RowCount = 7 };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -37,6 +39,7 @@ public sealed class ManualEntryForm : DpiForm
         grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         _dtDate = new DateTimePicker { Format = DateTimePickerFormat.Short, Width = 120 };
@@ -57,7 +60,28 @@ public sealed class ManualEntryForm : DpiForm
         grid.Controls.Add(MakeLabel("标签"), 0, 2);
         grid.Controls.Add(_cmbTag, 1, 2);
         grid.Controls.Add(MakeLabel("内容"), 0, 3);
+        var chooseHistory = new Button { Text = "从全部历史记录选择…", AutoSize = true, Visible = editing == null };
+        chooseHistory.Click += (_, _) =>
+        {
+            using var picker = new WorkLogPickerForm(_db);
+            if (picker.ShowDialog(this) != DialogResult.OK || picker.SelectedEntry == null) return;
+            _continueFromId = picker.SelectedEntry.Id;
+            _txtContent.Text = picker.SelectedEntry.Content ?? "";
+            _cmbTag.Text = picker.SelectedEntry.Tag ?? "";
+        };
+        grid.Controls.Add(chooseHistory, 1, 3);
         grid.Controls.Add(_txtContent, 1, 4);
+
+        var relatedCount = editing == null ? 0 : _db.GetRelatedLogs(editing.Id).Count;
+        _syncRelated = new CheckBox
+        {
+            Text = $"同步修改同一事项（共 {relatedCount} 条，含当前记录）",
+            AutoSize = true, Checked = relatedCount > 1, Enabled = relatedCount > 1,
+        };
+        var scope = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Visible = editing != null };
+        scope.Controls.Add(_syncRelated);
+        scope.Controls.Add(new Label { Text = "同步内容和标签；日期、时间只修改当前条。", AutoSize = true });
+        grid.Controls.Add(scope, 1, 5);
 
         var btnRow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, AutoSize = true };
         var btnSave = new Button { Text = "保存", AutoSize = true };
@@ -65,7 +89,7 @@ public sealed class ManualEntryForm : DpiForm
         var btnCancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, AutoSize = true };
         btnRow.Controls.Add(btnSave);
         btnRow.Controls.Add(btnCancel);
-        grid.Controls.Add(btnRow, 1, 5);
+        grid.Controls.Add(btnRow, 1, 6);
 
         Controls.Add(grid);
         AcceptButton = btnSave;
@@ -108,15 +132,28 @@ public sealed class ManualEntryForm : DpiForm
             return;
         }
 
-        var entry = _editing ?? new WorkLogEntry { Source = "manual" };
+        var entry = new WorkLogEntry
+        {
+            Id = _editing?.Id ?? 0,
+            Source = _editing?.Source ?? (_continueFromId.HasValue ? "continue" : "manual"),
+            ContinueFrom = _editing?.ContinueFrom ?? _continueFromId,
+        };
         entry.LogDate = _dtDate.Value.ToString("yyyy-MM-dd");
         entry.StartTime = _dtStart.Value.ToString("HH:mm");
         entry.EndTime = _dtEnd.Value.ToString("HH:mm");
         entry.Tag = _cmbTag.Text.Trim().Length > 0 ? _cmbTag.Text.Trim() : null;
         entry.Content = content;
 
-        if (_editing == null) _db.InsertWorkLog(entry);
-        else _db.UpdateWorkLog(entry);
+        try
+        {
+            if (_editing == null) _db.InsertWorkLog(entry);
+            else _db.UpdateWorkLog(entry, _syncRelated.Checked);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            MessageBox.Show(this, "保存失败：" + ex.Message, "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
 
         DialogResult = DialogResult.OK;
         Close();
