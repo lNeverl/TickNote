@@ -37,8 +37,14 @@ dotnet run --project tests\RegressionTests.csproj
 dotnet publish src\SedentaryReminder.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o dist
 ```
 
-产物：`dist\TickNote-vX.Y.Z.exe`，例如 `dist\TickNote-v1.0.3.exe`（约 65 MB 单文件，拷到任何电脑双击即用）。
-文件名仅使用 ASCII 字母、数字、连字符和点，避免 Windows 路径兼容问题。
+产物：`dist\TickNote.exe`（约 65 MB 单文件，拷到任何电脑双击即用）。
+文件名固定不带版本号：开机自启注册表记录的是 EXE 全路径，升级时直接覆盖同名文件即可，自启永不断链。
+
+识别当前版本的方式：
+1. 托盘右键菜单顶部、托盘悬停文字都显示 `TickNote vX.Y.Z`；
+2. 托盘菜单 → 关于（M5-7）；
+3. EXE 右键 → 属性 → 详细信息 → 文件版本；
+4. 资源管理器切"详细信息"视图后，右键列头勾选"文件版本"列，可一屏对比多个 EXE 的版本。
 
 ## 数据位置
 

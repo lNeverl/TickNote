@@ -1,6 +1,47 @@
+# 本地工具与临时文件
 .kimi_tmp/
+*.tmp
+*.temp
+*.log
+
+# .NET 构建、发布与测试产物
 dist/
 [Bb]in/
 [Oo]bj/
+TestResults/
+*.trx
+
+# IDE 与用户级配置
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# 运行数据：可能包含真实工作流水、报告和本机路径
+/data/
+boot.config.json
+config.json
+exports/
+backup/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite*
+
+# 本地环境变量和签名私钥
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+
+# Windows 资源管理器
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
 # logo 原图：已复制为 src/Assets/TickNote.png / TickNote.ico，仓库里保留那一份即可
 logo.png

@@ -16,13 +16,16 @@ if errorlevel 1 (
     exit /b 1
 )
 
-for /f "usebackq delims=" %%V in (`dotnet msbuild src\SedentaryReminder.csproj -nologo -getProperty:SafeFileVersion`) do set "APP_VERSION=%%V"
+for /f "usebackq delims=" %%V in (`dotnet msbuild src\SedentaryReminder.csproj -nologo -getProperty:Version`) do set "APP_VERSION=%%V"
 if not defined APP_VERSION (
     echo [ERROR] Could not read the application version from the project file.
     pause
     exit /b 1
 )
-set "OUTPUT_EXE=TickNote-v%APP_VERSION%.exe"
+rem Fixed file name (no version number): the auto-start registry entry points to this
+rem exact path, so a versioned file name would break auto-start after every upgrade.
+rem Upgrade = overwrite the same TickNote.exe; see About dialog / file properties for version.
+set "OUTPUT_EXE=TickNote.exe"
 
 echo [1/2] Publishing...
 
@@ -46,6 +49,6 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/2] Done: dist\%OUTPUT_EXE%
+echo [2/2] Done: dist\%OUTPUT_EXE%  (v%APP_VERSION%)
 echo Copy this single EXE to any Windows 10/11 x64 PC and run it directly.
 pause

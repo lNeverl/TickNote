@@ -42,6 +42,7 @@ public sealed class AppContext : ApplicationContext
         Reports = new ReportService(Config, Db);
 
         Overlay = new OverlayManager(Config, Db);
+        Overlay.Prewarm(); // 预热分层窗口/字体/JIT，首次弹窗背景与卡片同现不拖沓
         Overlay.Closed += action =>
         {
             Engine.NotifyOverlayClosed(action);

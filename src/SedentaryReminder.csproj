@@ -13,7 +13,6 @@
     <Version>1.0.3</Version>
     <AssemblyInformationalVersion>1.0.3</AssemblyInformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
-    <SafeFileVersion>$([System.Text.RegularExpressions.Regex]::Replace('$(Version)', '[^0-9A-Za-z.-]', '-'))</SafeFileVersion>
     <InvariantGlobalization>true</InvariantGlobalization>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <DebugType>none</DebugType>
@@ -26,17 +25,8 @@
     <EmbeddedResource Include="Assets\TickNote.ico" />
   </ItemGroup>
 
-  <!-- 只修改发布产物文件名，程序集名保持 TickNote，避免影响资源名和运行时逻辑。
-       SafeFileVersion 会把非 ASCII 安全字符替换为连字符。 -->
-  <Target Name="UseVersionedPublishFileName"
-          AfterTargets="Publish"
-          Condition="'$(PublishSingleFile)' == 'true' and Exists('$(PublishDir)$(AssemblyName).exe')">
-    <ItemGroup>
-      <_PreviousVersionedExecutables Include="$(PublishDir)$(AssemblyName)-v*.exe" />
-    </ItemGroup>
-    <Delete Files="@(_PreviousVersionedExecutables)" />
-    <Move SourceFiles="$(PublishDir)$(AssemblyName).exe"
-          DestinationFiles="$(PublishDir)$(AssemblyName)-v$(SafeFileVersion).exe" />
-  </Target>
+  <!-- 发布产物固定为 TickNote.exe（不带版本号）：开机自启注册表记录的是 EXE 全路径，
+       文件名一旦带版本号，升级换新文件后旧路径失效、重启后无法自启。
+       固定文件名后升级 = 直接覆盖同名文件；版本号看"关于"窗口或文件属性。 -->
 
 </Project>

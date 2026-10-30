@@ -1,5 +1,3 @@
-using System.Reflection;
-
 namespace SedentaryReminder.Settings;
 
 /// <summary>关于对话框（M5-7）：版本号、数据目录、打开数据目录。</summary>
@@ -15,8 +13,7 @@ public sealed class AboutForm : DpiForm
         ClientSize = new Size(420, 190);
         Font = new Font("Microsoft YaHei UI", 9F);
 
-        var version = Assembly.GetExecutingAssembly()
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "1.0.0";
+        var version = AppInfo.Version;
 
         // 固定坐标布局：DpiForm.Scale 对固定 Bounds 是纯乘法，任何 DPI 路径下都不会错乱
         // （AutoSize + TableLayoutPanel 在 DPI 切换时会被中间态污染，小窗口不值得冒这个险）

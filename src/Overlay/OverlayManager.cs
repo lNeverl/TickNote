@@ -77,16 +77,31 @@ public sealed class OverlayManager
     private void CreateForms()
     {
         var logs = TodayLogs();
-        foreach (var screen in Screen.AllScreens)
+        // 先全部构造、再连续显示：OverlayForm 构造（控件/字体/布局）+ 全屏分层窗口创建
+        // 在慢机器上要几百毫秒甚至 1~2 秒。若边构造边显示，背景层会先黑屏、卡片层姗姗来迟；
+        // 两阶段后两层窗口同一时刻出现，用户只看到"变暗 + 卡片"一步到位。
+        var pairs = new List<(DimForm Dim, OverlayForm Card)>();
+        try
+        {
+            foreach (var screen in Screen.AllScreens)
+            {
+                var dim = new DimForm(screen);
+                var form = new OverlayForm(this, _config, screen, logs);
+                dim.Click += (_, _) => form.Activate(); // 点到背景时把焦点还给卡片层（ESC 才能用）
+                pairs.Add((dim, form));
+            }
+        }
+        catch
+        {
+            foreach (var (dim, form) in pairs) { form.Dispose(); dim.Dispose(); }
+            throw;
+        }
+        foreach (var (dim, form) in pairs)
         {
             // 先铺半透明背景层，再放不透明卡片层（z 序：卡片在上）
-            var dim = new DimForm(screen);
             if (!IsTemporarilyReleased) dim.Show();
             _dimForms.Add(dim);
-
-            var form = new OverlayForm(this, _config, screen, logs);
             _forms.Add(form);
-            dim.Click += (_, _) => form.Activate(); // 点到背景时把焦点还给卡片层（ESC 才能用）
             if (!IsTemporarilyReleased) form.Show();
             form.SetInputText(_inputText);       // 热插拔重建时保留状态（N4）
             form.SetSelectedTag(_selectedTag);
@@ -99,6 +114,24 @@ public sealed class OverlayManager
             primary?.Activate();
             primary?.FocusInput();
         }
+    }
+
+    /// <summary>
+    /// 启动预热：以完全透明（Opacity=0）同步创建并销毁一对背景层+卡片层窗口，
+    /// 让 JIT、GDI 字体、DWM 全屏分层窗口路径提前就绪，每天第一次弹窗也一样快。
+    /// 全程在消息循环启动前同步执行，淡入计时器不会触发，用户看不到任何画面。
+    /// </summary>
+    public void Prewarm()
+    {
+        var screen = Screen.PrimaryScreen ?? Screen.AllScreens[0];
+        var dim = new DimForm(screen) { Opacity = 0 };
+        var form = new OverlayForm(this, _config, screen, new List<WorkLogEntry>());
+        dim.Show();
+        form.Show();
+        form.Hide();
+        dim.Hide();
+        form.Dispose();
+        dim.Dispose();
     }
 
     private List<WorkLogEntry> TodayLogs() => _db.GetLogs(DateTime.Today.ToString("yyyy-MM-dd"));

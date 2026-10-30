@@ -29,6 +29,9 @@ public sealed class TrayIcon : IDisposable
         _logo = LoadLogo();
 
         var menu = new ContextMenuStrip();
+        // 版本抬头：EXE 文件名固定为 TickNote.exe 后，这里是识别当前运行版本最顺手的位置
+        menu.Items.Add($"TickNote v{AppInfo.Version}").Enabled = false;
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("查看今日", null, (_, _) => _app.ShowLogView(DateTime.Today));
         menu.Items.Add("历史流水", null, (_, _) => _app.ShowLogView(null));
         menu.Items.Add("补记一条", null, (_, _) => _app.ShowManualEntry());
@@ -68,6 +71,8 @@ public sealed class TrayIcon : IDisposable
         UpdateStatus();
     }
 
+    private static readonly string HoverPrefix = $"TickNote v{AppInfo.Version}\n";
+
     /// <summary>M5-3：刷新悬停文字与图标（状态色 + 倒计时进度环）。</summary>
     private void UpdateStatus()
     {
@@ -75,8 +80,10 @@ public sealed class TrayIcon : IDisposable
         if (text != _lastStatus)
         {
             _lastStatus = text;
-            // 托盘悬停文字上限 63 字符
-            _icon.Text = text.Length > 60 ? "TickNote\n" + text[..56] + "…" : "TickNote\n" + text;
+            // 托盘悬停文字上限 63 字符；抬头带版本号，鼠标悬停即可识别当前版本
+            const int maxHover = 63;
+            var hover = HoverPrefix + text;
+            _icon.Text = hover.Length <= maxHover ? hover : hover[..(maxHover - 1)] + "…";
         }
 
         // 进度量化到 1%，状态和进度都没变就不重绘，避免托盘图标闪烁
