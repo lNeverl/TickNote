@@ -106,14 +106,30 @@ dotnet publish src\SedentaryReminder.csproj -c Release -r win-x64 --self-contain
 
 产物为 `dist\TickNote.exe`，已内嵌 .NET 运行时。
 
-## 自动构建
+## 自动构建与发布
 
-仓库提供 GitHub Actions 工作流：每次 `push`、每个 Pull Request 以及手动触发时，都会在 Windows 环境中依次完成还原、Release 编译、回归检查和单文件发布。
+### 分支构建
+
+每次分支 `push`、每个 Pull Request 以及手动触发时，GitHub Actions 都会在 Windows 环境中依次完成还原、Release 编译、回归检查和单文件发布。
 
 成功后会生成 `TickNote-win-x64` 构建产物，包含：
 
 - `TickNote.exe`
 - `TickNote.exe.sha256`
+
+### 标签自动发布
+
+推送以 `v` 开头的版本标签时，独立的 Release 工作流会重新完成编译和回归检查，然后直接创建 GitHub Release，上传 EXE 与 SHA-256 文件，并自动生成发布说明，无需手动上传资产。
+
+1. 更新 `src/SedentaryReminder.csproj` 中的 `<Version>` 和 `<AssemblyInformationalVersion>`，并提交改动。
+2. 在包含发布工作流的提交上创建同名标签，标签去掉首个 `v` 后必须与 `<Version>` 完全一致。例如：
+   ```bash
+   git tag v1.0.3
+   git push origin v1.0.3
+   ```
+3. 等待 Actions 中的 **Release** 工作流完成，即可在 Releases 页面查看 `TickNote v1.0.3`。
+
+标签与项目版本不一致、测试失败或 Release 已存在时，发布会停止，不会覆盖已有 Release。自动生成的发布说明仍可在 GitHub 页面编辑。
 
 ## 项目结构
 
