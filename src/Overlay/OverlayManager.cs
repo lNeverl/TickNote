@@ -26,6 +26,7 @@ public sealed class OverlayManager
     private string _inputText = "";
     private string? _selectedTag;
     private long? _continueFromId;
+    private long? _selectedTodoId;
     private int _countdownTotalSec;
     private int _countdownRemainingSec;
     private IntPtr _prevForeground;
@@ -62,6 +63,7 @@ public sealed class OverlayManager
         _inputText = "";
         _selectedTag = null;
         _continueFromId = null;
+        _selectedTodoId = null;
         _continuedContent = null;
         _continuedTag = null;
         _logsVisible = false; // 每次弹窗默认隐藏今日记录（隐私）
@@ -184,6 +186,7 @@ public sealed class OverlayManager
     internal void OnContinueRequested(WorkLogEntry entry)
     {
         _continueFromId = entry.Id;
+        _selectedTodoId = null;
         _continuedContent = entry.Content;
         _continuedTag = entry.Tag;
         _selectedTag = entry.Tag;
@@ -205,6 +208,33 @@ public sealed class OverlayManager
         {
             if (picker.SelectedEntry != null) OnContinueRequested(picker.SelectedEntry);
         });
+    }
+
+    internal void OnTodoRequested()
+    {
+        if (_auxiliaryForm != null) { _auxiliaryForm.Activate(); return; }
+        using var picker = new SedentaryReminder.Todo.TodoPickerForm(_db);
+        RunAuxiliaryDialog(picker, () =>
+        {
+            if (picker.SelectedEntry != null) OnTodoSelected(picker.SelectedEntry);
+        });
+    }
+
+    private void OnTodoSelected(SedentaryReminder.Todo.TodoEntry entry)
+    {
+        _selectedTodoId = entry.Id;
+        _continueFromId = null;
+        _continuedContent = null;
+        _continuedTag = null;
+        _selectedTag = null;
+        _inputText = entry.Content;
+        foreach (var form in _forms)
+        {
+            form.SetInputText(_inputText);
+            form.SetSelectedTag(null);
+        }
+        _accessForm?.SetDraft(_inputText);
+        if (!IsTemporarilyReleased) _forms.FirstOrDefault(form => form.IsPrimary)?.FocusInput();
     }
 
     internal void OnEditRequested(WorkLogEntry entry)
@@ -312,6 +342,7 @@ public sealed class OverlayManager
         }
         _inputText = "";
         _continueFromId = null;
+        _selectedTodoId = null;
         _selectedTag = null;
         foreach (var f in _forms)
         {
@@ -348,7 +379,7 @@ public sealed class OverlayManager
             EndTime = DateTime.Now.ToString("HH:mm"),
             Tag = _selectedTag,
             Content = text,
-            Source = _continueFromId != null ? "continue" : "popup", // M3-4 续记生成新条目
+            Source = _continueFromId != null ? "continue" : _selectedTodoId != null ? "todo" : "popup", // 续记优先，其次待办选择
             ContinueFrom = _continueFromId,
         });
         return true;

@@ -24,6 +24,7 @@ public sealed class AppContext : ApplicationContext
     // 非模态窗口单例：重复点菜单项时拉到前台，不再开新窗（两个窗口内容不一致会互相覆盖）
     private LogViewForm? _logViewToday;
     private LogViewForm? _logViewHistory;
+    private Todo.TodoViewForm? _todoView;
     private ReportViewForm? _reportView;
     // 模态窗口单例：模态循环下托盘菜单仍可能触发菜单项
     private readonly Dictionary<Type, Form> _openDialogs = new();
@@ -114,6 +115,14 @@ public sealed class AppContext : ApplicationContext
     }
 
     internal void ShowManualEntry() => ShowDialogOnce(() => new ManualEntryForm(Db, Config));
+
+    internal void ShowTodoView()
+    {
+        if (TryActivate(_todoView)) return;
+        _todoView = new Todo.TodoViewForm(Db);
+        _todoView.FormClosed += (_, _) => _todoView = null;
+        _todoView.Show();
+    }
 
     internal void ShowReportView()
     {

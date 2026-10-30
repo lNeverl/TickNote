@@ -190,8 +190,9 @@ public sealed class OverlayForm : Form
         tagRow.Margin = new Padding(0, 0, 0, 14);
 
         // 隐私开关（小眼睛）：默认隐藏今日记录内容，防止弹窗时被旁人看到
-        var todayRow = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 3, Margin = new Padding(0, 0, 0, 8) };
+        var todayRow = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 4, Margin = new Padding(0, 0, 0, 8) };
         todayRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        todayRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         todayRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         todayRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var lblToday = new Label
@@ -209,7 +210,10 @@ public sealed class OverlayForm : Form
         var history = CreateButton("全部历史续记", TagBack, 32, 124, new Padding(10, 3, 10, 3), new Padding(0, 0, 8, 0));
         history.Click += (_, _) => _manager.OnHistoryRequested();
         todayRow.Controls.Add(history, 1, 0);
-        todayRow.Controls.Add(_btnEye, 2, 0);
+        var todo = CreateButton("从待办选择", TagBack, 32, 112, new Padding(10, 3, 10, 3), new Padding(0, 0, 8, 0));
+        todo.Click += (_, _) => _manager.OnTodoRequested();
+        todayRow.Controls.Add(todo, 2, 0);
+        todayRow.Controls.Add(_btnEye, 3, 0);
 
         // M2-9 今日流水面板（继续 / 删除），默认折叠隐藏
         var outer = new Panel

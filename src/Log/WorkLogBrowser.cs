@@ -190,7 +190,7 @@ public sealed class WorkLogBrowser : UserControl
         SelectionChanged?.Invoke();
     }
 
-    private static string SourceName(string source) => source switch { "manual" => "补记", "continue" => "续记", _ => "弹窗" };
+    private static string SourceName(string source) => source switch { "manual" => "补记", "continue" => "续记", "todo" => "待办", _ => "弹窗" };
 
     private void LayoutFilters()
     {

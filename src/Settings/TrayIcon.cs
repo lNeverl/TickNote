@@ -33,6 +33,7 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add($"TickNote v{AppInfo.Version}").Enabled = false;
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("查看今日", null, (_, _) => _app.ShowLogView(DateTime.Today));
+        menu.Items.Add("每日待办", null, (_, _) => _app.ShowTodoView());
         menu.Items.Add("历史流水", null, (_, _) => _app.ShowLogView(null));
         menu.Items.Add("补记一条", null, (_, _) => _app.ShowManualEntry());
         menu.Items.Add("我的报告", null, (_, _) => _app.ShowReportView());
