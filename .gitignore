@@ -3,42 +3,65 @@
 *.tmp
 *.temp
 *.log
+*.bak
+*.orig
+*.rej
+*.swp
+*~
+
+# 历史改写前的仓库备份：可能包含已脱敏前的提交内容，任何情况下都不要提交
+*.bundle
 
 # .NET 构建、发布与测试产物
 dist/
+artifacts/
+publish/
+out/
 [Bb]in/
 [Oo]bj/
 TestResults/
 *.trx
+*.nupkg
+*.snupkg
+coverage/
+*.coverage
+/TickNote.exe
 
 # IDE 与用户级配置
 .vs/
 .idea/
+.vscode/
 *.suo
 *.user
 *.userosscache
 *.sln.docstates
 
 # 运行数据：可能包含真实工作流水、报告和本机路径
+# 根目录模式（/data/、/exports/、/backup/）避免在 Windows 大小写不敏感时误伤 src/Data/ 等源码目录
 /data/
 boot.config.json
 config.json
-exports/
-backup/
+/exports/
+/backup/
 *.db
 *.db-shm
 *.db-wal
 *.db-journal
 *.sqlite*
 
-# 本地环境变量和签名私钥
+# 本地环境变量、签名私钥与证书
 .env
 .env.*
 !.env.example
 *.pfx
 *.p12
+*.snk
+*.pem
+*.key
 
-# Windows 资源管理器
+# 系统与资源管理器
+.DS_Store
+._*
 Thumbs.db
 ehthumbs.db
 Desktop.ini
