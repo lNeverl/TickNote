@@ -1,0 +1,61 @@
+name: Bug 反馈
+description: 报告 TickNote 的异常行为
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请提供可复现的信息。不要粘贴真实工作流水、数据库、配置或未脱敏截图。
+  - type: input
+    id: version
+    attributes:
+      label: TickNote 版本
+      description: 可在托盘菜单顶部或「关于」窗口查看
+      placeholder: 例如 1.0.3
+    validations:
+      required: true
+  - type: dropdown
+    id: windows
+    attributes:
+      label: Windows 版本
+      options:
+        - Windows 11
+        - Windows 10
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: display
+    attributes:
+      label: 显示环境
+      description: 显示器数量、DPI 缩放比例；非界面问题可填写“不适用”
+      placeholder: 例如 双屏，主屏 150%，副屏 100%
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开……
+        2. 点击……
+        3. 出现……
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+      description: 如有错误提示，请附上脱敏后的文本或截图
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充信息
+      description: 便携/自定义数据模式、是否升级旧版本，以及其他相关信息
