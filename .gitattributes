@@ -1,0 +1,13 @@
+# 统一换行，避免 Windows 与 Linux/macOS 之间出现整文件差异
+* text=auto eol=lf
+
+# Windows 批处理请保留 CRLF，避免 cmd.exe 解析异常
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制资源不做换行转换
+*.png binary
+*.ico binary
+*.db binary
+*.pfx binary
+*.snk binary
