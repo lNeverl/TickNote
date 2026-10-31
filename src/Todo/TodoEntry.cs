@@ -6,6 +6,7 @@ public sealed class TodoEntry
     public long Id { get; set; }
     public string TodoDate { get; set; } = "";
     public string Content { get; set; } = "";
+    public string? Tag { get; set; }
     public bool IsCompleted { get; set; }
     public string CreatedAt { get; set; } = "";
     public string? CompletedAt { get; set; }

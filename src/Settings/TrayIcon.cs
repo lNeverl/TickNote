@@ -32,6 +32,7 @@ public sealed class TrayIcon : IDisposable
         // 版本抬头：EXE 文件名固定为 TickNote.exe 后，这里是识别当前运行版本最顺手的位置
         menu.Items.Add($"TickNote v{AppInfo.Version}").Enabled = false;
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("打开主界面", null, (_, _) => _app.ShowMainWindow());
         menu.Items.Add("查看今日", null, (_, _) => _app.ShowLogView(DateTime.Today));
         menu.Items.Add("每日待办", null, (_, _) => _app.ShowTodoView());
         menu.Items.Add("历史流水", null, (_, _) => _app.ShowLogView(null));
@@ -63,7 +64,7 @@ public sealed class TrayIcon : IDisposable
             Visible = true,
             ContextMenuStrip = menu,
         };
-        _icon.DoubleClick += (_, _) => _app.ShowLogView(DateTime.Today);
+        _icon.MouseDoubleClick += (_, e) => { if (e.Button == MouseButtons.Left) _app.ShowMainWindow(); };
 
         _app.Engine.StatusChanged += UpdateStatus;
         _statusTimer = new System.Windows.Forms.Timer { Interval = 1000 };
@@ -167,6 +168,7 @@ public sealed class TrayIcon : IDisposable
 
     public void Dispose()
     {
+        _app.Engine.StatusChanged -= UpdateStatus;
         _statusTimer.Dispose();
         _icon.Visible = false;
         if (_currentIcon != null)

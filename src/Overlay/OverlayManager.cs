@@ -1,5 +1,6 @@
 using SedentaryReminder.Data;
 using SedentaryReminder.Log;
+using System.Diagnostics;
 
 namespace SedentaryReminder.Overlay;
 
@@ -9,7 +10,7 @@ namespace SedentaryReminder.Overlay;
 /// 任一屏操作实时同步到其他屏（M2-2），关闭即全部关闭（M2-1）。
 /// 保存交互：独立“保存”按钮（3 秒冷却，可连续存多条）+ 关闭按钮兜底自动保存 + 流水可删除。
 /// </summary>
-public sealed class OverlayManager
+public sealed class OverlayManager : IDisposable
 {
     private const int SaveCooldownMs = 3000;
     private const int EmptyHintMs = 1500;
@@ -29,6 +30,8 @@ public sealed class OverlayManager
     private long? _selectedTodoId;
     private int _countdownTotalSec;
     private int _countdownRemainingSec;
+    private long _countdownStartedAt;
+    internal TimeSpan LastPreparationTime { get; private set; }
     private IntPtr _prevForeground;
     private bool _logsVisible; // 小眼睛状态，所有屏一致
     private ReminderAccessForm? _accessForm;
@@ -72,16 +75,24 @@ public sealed class OverlayManager
         _prevForeground = NativeMethods.GetForegroundWindow(); // N5：关窗后恢复焦点
         _db.WorkLogsChanged += OnWorkLogsChanged;
 
-        CreateForms();
-        StartCountdown();
+        try
+        {
+            CreateForms();
+            StartCountdown();
+        }
+        catch
+        {
+            Cleanup();
+            throw;
+        }
     }
 
     private void CreateForms()
     {
+        var started = Stopwatch.GetTimestamp();
         var logs = TodayLogs();
-        // 先全部构造、再连续显示：OverlayForm 构造（控件/字体/布局）+ 全屏分层窗口创建
-        // 在慢机器上要几百毫秒甚至 1~2 秒。若边构造边显示，背景层会先黑屏、卡片层姗姗来迟；
-        // 两阶段后两层窗口同一时刻出现，用户只看到"变暗 + 卡片"一步到位。
+        // 先在完全透明的状态下创建所有屏幕的原生句柄、布局与首帧，
+        // 准备完毕后统一呈现；仅提前构造 C# 对象不能消除首次显示时的开销。
         var pairs = new List<(DimForm Dim, OverlayForm Card)>();
         try
         {
@@ -89,8 +100,19 @@ public sealed class OverlayManager
             {
                 var dim = new DimForm(screen);
                 var form = new OverlayForm(this, _config, screen, logs);
+                dim.AddOwnedForm(form); // 即使背景层稍后显示，卡片也始终位于它上方。
                 dim.Click += (_, _) => form.Activate(); // 点到背景时把焦点还给卡片层（ESC 才能用）
                 pairs.Add((dim, form));
+                form.SetInputText(_inputText);
+                form.SetSelectedTag(_selectedTag);
+                form.SetLogsVisible(_logsVisible);
+                form.UpdateCountdown(_countdownRemainingSec, _countdownTotalSec);
+                if (_countdownRemainingSec == 0) form.OnCountdownFinished();
+                if (!IsTemporarilyReleased)
+                {
+                    dim.PreparePresentation();
+                    form.PreparePresentation();
+                }
             }
         }
         catch
@@ -100,15 +122,12 @@ public sealed class OverlayManager
         }
         foreach (var (dim, form) in pairs)
         {
-            // 先铺半透明背景层，再放不透明卡片层（z 序：卡片在上）
-            if (!IsTemporarilyReleased) dim.Show();
             _dimForms.Add(dim);
             _forms.Add(form);
-            if (!IsTemporarilyReleased) form.Show();
-            form.SetInputText(_inputText);       // 热插拔重建时保留状态（N4）
-            form.SetSelectedTag(_selectedTag);
-            form.SetLogsVisible(_logsVisible);
         }
+        LastPreparationTime = Stopwatch.GetElapsedTime(started);
+        // 所有屏幕准备好后先呈现已绘制的卡片，再揭开背景层，避免出现只有灰屏的帧。
+        if (!IsTemporarilyReleased) PresentPreparedForms();
         // M2-12：主屏弹窗输入框获得焦点
         var primary = _forms.FirstOrDefault(f => f.IsPrimary);
         if (!IsTemporarilyReleased)
@@ -120,30 +139,29 @@ public sealed class OverlayManager
 
     /// <summary>
     /// 启动预热：以完全透明（Opacity=0）同步创建并销毁一对背景层+卡片层窗口，
-    /// 让 JIT、GDI 字体、DWM 全屏分层窗口路径提前就绪，每天第一次弹窗也一样快。
-    /// 全程在消息循环启动前同步执行，淡入计时器不会触发，用户看不到任何画面。
+    /// 提前初始化 JIT、GDI 字体与全屏分层窗口路径，减少首次显示的准备时间。
+    /// 全程不调用 Present，用户看不到预热窗口。
     /// </summary>
     public void Prewarm()
     {
         var screen = Screen.PrimaryScreen ?? Screen.AllScreens[0];
-        var dim = new DimForm(screen) { Opacity = 0 };
-        var form = new OverlayForm(this, _config, screen, new List<WorkLogEntry>());
-        dim.Show();
-        form.Show();
-        form.Hide();
-        dim.Hide();
-        form.Dispose();
-        dim.Dispose();
+        using var dim = new DimForm(screen);
+        using var form = new OverlayForm(this, _config, screen, new List<WorkLogEntry>());
+        dim.AddOwnedForm(form);
+        form.UpdateCountdown(120, 120);
+        dim.PreparePresentation();
+        form.PreparePresentation();
     }
 
     private List<WorkLogEntry> TodayLogs() => _db.GetLogs(DateTime.Today.ToString("yyyy-MM-dd"));
 
     private void StartCountdown()
     {
+        _countdownStartedAt = Stopwatch.GetTimestamp();
         _countdownTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _countdownTimer.Tick += (_, _) =>
         {
-            _countdownRemainingSec--;
+            _countdownRemainingSec = Math.Max(0, _countdownTotalSec - (int)Stopwatch.GetElapsedTime(_countdownStartedAt).TotalSeconds);
             if (_countdownRemainingSec <= 0)
             {
                 _countdownRemainingSec = 0;
@@ -226,12 +244,12 @@ public sealed class OverlayManager
         _continueFromId = null;
         _continuedContent = null;
         _continuedTag = null;
-        _selectedTag = null;
+        _selectedTag = entry.Tag;
         _inputText = entry.Content;
         foreach (var form in _forms)
         {
             form.SetInputText(_inputText);
-            form.SetSelectedTag(null);
+            form.SetSelectedTag(_selectedTag);
         }
         _accessForm?.SetDraft(_inputText);
         if (!IsTemporarilyReleased) _forms.FirstOrDefault(form => form.IsPrimary)?.FocusInput();
@@ -293,10 +311,17 @@ public sealed class OverlayManager
 
     private void RestoreFullScreen()
     {
-        foreach (var dim in _dimForms) dim.Show();
-        foreach (var form in _forms) form.Show();
         UpdateCountdownOnForms();
+        foreach (var dim in _dimForms) dim.PreparePresentation();
+        foreach (var form in _forms) form.PreparePresentation();
+        PresentPreparedForms();
         _forms.FirstOrDefault(form => form.IsPrimary)?.FocusInput();
+    }
+
+    private void PresentPreparedForms()
+    {
+        foreach (var form in _forms) form.Present();
+        foreach (var dim in _dimForms) dim.Present();
     }
 
     private void OnWorkLogsChanged()
@@ -349,6 +374,7 @@ public sealed class OverlayManager
             f.SetInputText("");
             f.SetSelectedTag(null);
         }
+        _accessForm?.SetDraft("");
         RefreshLogsAll();
         StartSaveCooldown();
     }
@@ -415,6 +441,32 @@ public sealed class OverlayManager
     }
 
     // ---------------- 关闭 ----------------
+
+    internal bool TryCloseForShutdown()
+    {
+        if (!IsOpen) return true;
+        try { TrySaveInput(); }
+        catch (Microsoft.Data.Sqlite.SqliteException ex)
+        {
+            MessageBox.Show("提醒中的草稿保存失败：" + ex.Message, "无法退出", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+        Cleanup();
+        return true;
+    }
+
+    internal bool TrySavePendingDraft()
+    {
+        if (!IsOpen || string.IsNullOrWhiteSpace(_inputText)) return true;
+        try { OnSaveRequested(); return true; }
+        catch (Microsoft.Data.Sqlite.SqliteException ex)
+        {
+            MessageBox.Show("提醒中的草稿保存失败：" + ex.Message, "无法迁移数据", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+    }
+
+    public void Dispose() { if (IsOpen) Cleanup(); }
 
     internal void OnAction(string action)
     {
@@ -485,8 +537,11 @@ public sealed class OverlayManager
             ShowInTaskbar = false;
             TopMost = true;
             BackColor = Color.Black;
-            Opacity = DimOpacity;
+            Opacity = 0;
         }
+
+        internal void PreparePresentation() { Opacity = 0; Show(); Update(); }
+        internal void Present() => Opacity = DimOpacity;
 
         protected override bool ShowWithoutActivation => true; // 不抢卡片层输入框的焦点
 

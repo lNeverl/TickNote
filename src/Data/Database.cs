@@ -49,7 +49,7 @@ public sealed class Database : IDisposable
 
     private const string LogColumns = "id, log_date, start_time, end_time, tag, content, source, continue_from, work_item_id";
     private const string NormalizedContent = "trim(COALESCE(content, ''), char(9) || char(10) || char(13) || ' ')";
-    private const string TodoColumns = "id, todo_date, content, is_completed, created_at, completed_at";
+    private const string TodoColumns = "id, todo_date, content, is_completed, created_at, completed_at, tag";
 
     public Database(string dataDir)
     {
@@ -100,6 +100,7 @@ public sealed class Database : IDisposable
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 todo_date     TEXT NOT NULL,
                 content       TEXT NOT NULL,
+                tag           TEXT,
                 is_completed  INTEGER NOT NULL DEFAULT 0,
                 created_at    TEXT NOT NULL,
                 completed_at  TEXT
@@ -110,7 +111,21 @@ public sealed class Database : IDisposable
             CREATE INDEX IF NOT EXISTS idx_todo_item_date ON todo_item(todo_date, is_completed, id);
             """;
         cmd.ExecuteNonQuery();
+        MigrateTodoTags();
         MigrateWorkItems();
+    }
+
+    private void MigrateTodoTags()
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "PRAGMA table_info(todo_item);";
+        using (var reader = cmd.ExecuteReader())
+        {
+            while (reader.Read())
+                if (reader.GetString(1) == "tag") return;
+        }
+        cmd.CommandText = "ALTER TABLE todo_item ADD COLUMN tag TEXT;";
+        cmd.ExecuteNonQuery();
     }
 
     private void MigrateWorkItems()
@@ -360,27 +375,30 @@ public sealed class Database : IDisposable
                 System.Globalization.DateTimeStyles.None, out _))
             throw new ArgumentException("待办日期无效。", nameof(e));
         e.Content = content;
+        e.Tag = NormalizeTodoTag(e.Tag);
         e.IsCompleted = false;
         e.CreatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
         e.CompletedAt = null;
         using var cmd = _conn.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO todo_item (todo_date, content, is_completed, created_at, completed_at)
-            VALUES ($d, $c, 0, $ca, NULL); SELECT last_insert_rowid();
+            INSERT INTO todo_item (todo_date, content, tag, is_completed, created_at, completed_at)
+            VALUES ($d, $c, $tag, 0, $ca, NULL); SELECT last_insert_rowid();
             """;
         cmd.Parameters.AddWithValue("$d", e.TodoDate);
         cmd.Parameters.AddWithValue("$c", e.Content);
+        cmd.Parameters.AddWithValue("$tag", (object?)e.Tag ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$ca", e.CreatedAt);
         e.Id = (long)(cmd.ExecuteScalar() ?? 0L);
         TodosChanged?.Invoke();
         return e.Id;
     }
 
-    public void UpdateTodoContent(long id, string content)
+    public void UpdateTodo(long id, string content, string? tag)
     {
         using var cmd = _conn.CreateCommand();
-        cmd.CommandText = "UPDATE todo_item SET content=$c WHERE id=$id;";
+        cmd.CommandText = "UPDATE todo_item SET content=$c, tag=$tag WHERE id=$id;";
         cmd.Parameters.AddWithValue("$c", NormalizeTodoContent(content));
+        cmd.Parameters.AddWithValue("$tag", (object?)NormalizeTodoTag(tag) ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$id", id);
         if (cmd.ExecuteNonQuery() == 0) throw new InvalidOperationException("这条待办已被删除，请刷新后重试。");
         TodosChanged?.Invoke();
@@ -391,7 +409,7 @@ public sealed class Database : IDisposable
         using var cmd = _conn.CreateCommand();
         cmd.CommandText = "UPDATE todo_item SET is_completed=$done, completed_at=$at WHERE id=$id;";
         cmd.Parameters.AddWithValue("$done", completed ? 1 : 0);
-        cmd.Parameters.AddWithValue("$at", completed ? DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") : DBNull.Value);
+        cmd.Parameters.AddWithValue("$at", completed ? DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fffffff") : DBNull.Value);
         cmd.Parameters.AddWithValue("$id", id);
         if (cmd.ExecuteNonQuery() == 0) throw new InvalidOperationException("这条待办已被删除，请刷新后重试。");
         TodosChanged?.Invoke();
@@ -451,6 +469,7 @@ public sealed class Database : IDisposable
                 IsCompleted = r.GetInt64(3) != 0,
                 CreatedAt = r.GetString(4),
                 CompletedAt = r.IsDBNull(5) ? null : r.GetString(5),
+                Tag = r.IsDBNull(6) ? null : r.GetString(6),
             });
         }
         return list;
@@ -462,6 +481,8 @@ public sealed class Database : IDisposable
         if (normalized.Length == 0) throw new ArgumentException("待办内容不能为空。", nameof(content));
         return normalized;
     }
+
+    private static string? NormalizeTodoTag(string? tag) => string.IsNullOrWhiteSpace(tag) ? null : tag.Trim();
 
     // ---------------- reminder_event ----------------
 

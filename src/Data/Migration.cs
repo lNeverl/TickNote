@@ -4,7 +4,7 @@ namespace SedentaryReminder.Data;
 
 /// <summary>
 /// 数据目录迁移（M0-7）：用 SQLite 在线备份 API 把当前库一致地复制到新目录，
-/// 连同 config.json / exports / backup 一起搬走，旧目录保留作为兜底。
+/// 连同 config.json / ui-state.json / exports / backup 一起搬走，旧目录保留作为兜底。
 /// </summary>
 public static class Migration
 {
@@ -30,6 +30,7 @@ public static class Migration
         }
 
         CopyIfExists(Path.Combine(currentDataDir, "config.json"), Path.Combine(newDir, "config.json"));
+        CopyIfExists(Path.Combine(currentDataDir, "ui-state.json"), Path.Combine(newDir, "ui-state.json"));
         CopyDirIfExists(Path.Combine(currentDataDir, "exports"), Path.Combine(newDir, "exports"));
         CopyDirIfExists(Path.Combine(currentDataDir, "backup"), Path.Combine(newDir, "backup"));
     }

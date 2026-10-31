@@ -17,12 +17,11 @@ public sealed class OverlayForm : Form
     /// <summary>镂空色：卡片以外的区域显示为该色即被 TransparencyKey 抠掉。</summary>
     private static readonly Color KeyColor = Color.Magenta;
 
-    private static readonly Color CardBack = Color.FromArgb(32, 32, 40);
-    private static readonly Color CardFore = Color.FromArgb(235, 235, 240);
-    private static readonly Color AccentGreen = Color.FromArgb(46, 125, 50);
+    private static readonly Color CardBack = UiLayout.Surface;
+    private static readonly Color CardFore = UiLayout.Text;
     private static readonly Color AccentBlue = Color.FromArgb(40, 90, 160);
-    private static readonly Color TagBack = Color.FromArgb(58, 58, 72);
-    private static readonly Color TagSelected = Color.FromArgb(46, 125, 50);
+    private static readonly Color TagBack = UiLayout.Sidebar;
+    private static readonly Color TagSelected = UiLayout.Selected;
 
     private readonly OverlayManager _manager;
     private readonly AppConfig _config;
@@ -33,6 +32,12 @@ public sealed class OverlayForm : Form
     private readonly Button _btnDone;
     private readonly Button _btnSave;
     private readonly TableLayoutPanel _card;
+    private readonly TableLayoutPanel _frame;
+    private readonly TableLayoutPanel _footer;
+    private readonly Panel _viewport;
+    private bool _layingOut;
+    private bool _presented;
+    internal bool IsReadyToPresent { get; private set; }
     private readonly Label _lblTitle;
     private readonly Label _lblHint;
     private readonly Panel _logPanelOuter;
@@ -47,7 +52,6 @@ public sealed class OverlayForm : Form
     private bool _logsVisible; // 隐私开关：每次弹窗默认隐藏今日记录，点小眼睛才显示
     private List<WorkLogEntry> _todayLogs = new();
     private readonly Dictionary<string, Button> _tagButtons = new();
-    private readonly System.Windows.Forms.Timer _fadeTimer;
     private readonly List<Font> _fonts = new(); // 弹窗每天弹出十余次，字体必须随窗体释放（N1 内存硬指标）
     private bool _suppressTextEvent;
 
@@ -70,7 +74,7 @@ public sealed class OverlayForm : Form
         ShowInTaskbar = false;
         BackColor = KeyColor;           // 卡片以外的区域全部镂空
         TransparencyKey = KeyColor;
-        Opacity = 0;                    // M2-14 淡入
+        Opacity = 0;                    // 所有屏幕首帧准备完毕后再统一呈现
         KeyPreview = true;              // M2-13 ESC
         Font = TrackFont(new Font("Microsoft YaHei UI", 10F));
 
@@ -94,14 +98,13 @@ public sealed class OverlayForm : Form
         {
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            AutoScroll = true, // 极端 DPI/小屏下内容超高时出滚动条，而不是把按钮裁没
+            Dock = DockStyle.Top,
             MinimumSize = new Size(640, 0),
             BackColor = CardBack,
             ForeColor = CardFore,
             Padding = new Padding(28, 22, 28, 22),
             ColumnCount = 1,
-            RowCount = 10,
-            Anchor = AnchorStyles.None,
+            RowCount = 8,
             Margin = Padding.Empty,
         };
         card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -150,7 +153,7 @@ public sealed class OverlayForm : Form
             AutoSize = false,
             Height = 72,
             Dock = DockStyle.Fill,
-            BackColor = Color.FromArgb(22, 22, 28),
+            BackColor = CardBack,
             ForeColor = CardFore,
             BorderStyle = BorderStyle.FixedSingle,
         };
@@ -199,7 +202,7 @@ public sealed class OverlayForm : Form
         {
             Text = "今天已记录",
             AutoSize = true,
-            ForeColor = Color.FromArgb(150, 150, 160),
+            ForeColor = UiLayout.Muted,
             Anchor = AnchorStyles.Left,
             Margin = Padding.Empty,
         };
@@ -221,7 +224,7 @@ public sealed class OverlayForm : Form
             Dock = DockStyle.Fill,
             Height = LogPanelHeight,
             AutoScroll = true,
-            BackColor = Color.FromArgb(26, 26, 32),
+            BackColor = UiLayout.PageBack,
             Padding = new Padding(10),
             Margin = new Padding(0, 0, 0, 12),
             Visible = false,
@@ -251,11 +254,11 @@ public sealed class OverlayForm : Form
         for (var i = 0; i < 5; i++) btnRow.ColumnStyles.Add(new ColumnStyle(i % 2 == 0 ? SizeType.Percent : SizeType.Absolute, i % 2 == 0 ? 1 : 8));
         _actionRow = btnRow;
         var actionFont = TrackFont(new Font("Microsoft YaHei UI", 10F, FontStyle.Bold));
-        _btnDone = MakeActionButton("刚活动完", AccentGreen, actionFont);
+        _btnDone = MakeActionButton("刚活动完", AccentBlue, actionFont);
         _btnDone.Click += (_, _) => _manager.OnAction("done");
-        var btnSkip = MakeActionButton("跳过", Color.FromArgb(90, 90, 100), actionFont);
+        var btnSkip = MakeActionButton("跳过", CardBack, actionFont);
         btnSkip.Click += (_, _) => _manager.OnAction("skip");
-        var btnPostpone = MakeActionButton($"推迟{config.PostponeMinutes}分钟", Color.FromArgb(120, 90, 30), actionFont);
+        var btnPostpone = MakeActionButton($"推迟{config.PostponeMinutes}分钟", CardBack, actionFont);
         btnPostpone.Click += (_, _) => _manager.OnAction("postpone");
         foreach (var button in new[] { _btnDone, btnSkip, btnPostpone })
         {
@@ -275,31 +278,61 @@ public sealed class OverlayForm : Form
         {
             Text = "倒计时仅作建议；活动过后可直接点击「刚活动完」。",
             AutoSize = true,
-            ForeColor = Color.FromArgb(140, 140, 150),
+            ForeColor = UiLayout.Muted,
             Margin = new Padding(0, 10, 0, 0),
         };
         _lblHint = lblHint;
 
-        var cardRows = new Control[] { lblTitle, countdownRow, lblInput, _txtInput, tagRow, todayRow, outer, access, btnRow, lblHint };
+        var cardRows = new Control[] { lblTitle, countdownRow, lblInput, _txtInput, tagRow, todayRow, outer, access };
         for (var i = 0; i < cardRows.Length; i++) card.Controls.Add(cardRows[i], 0, i);
 
-        center.Controls.Add(card, 1, 1);
+        _viewport = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Margin = Padding.Empty, BackColor = CardBack };
+        _viewport.Controls.Add(card);
+        _footer = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1, RowCount = 2, BackColor = CardBack, Padding = new Padding(28, 12, 28, 20), Margin = Padding.Empty };
+        _footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        _footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _footer.Controls.Add(btnRow, 0, 0);
+        _footer.Controls.Add(lblHint, 0, 1);
+        _footer.Paint += (_, e) => { using var pen = new Pen(UiLayout.Border); e.Graphics.DrawLine(pen, 0, 0, _footer.Width, 0); };
+        _frame = new TableLayoutPanel { ColumnCount = 1, RowCount = 2, BackColor = CardBack, Margin = Padding.Empty, Anchor = AnchorStyles.None };
+        _frame.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        _frame.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _frame.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _frame.Controls.Add(_viewport, 0, 0);
+        _frame.Controls.Add(_footer, 0, 1);
+        center.Controls.Add(_frame, 1, 1);
         Controls.Add(center);
 
-        foreach (var control in Descendants(card).Where(control => control is not Button))
+        foreach (var control in Descendants(_frame).Where(control => control is not Button))
             _spacing[control] = (control.Margin, control.Padding);
         _tagPanel.SizeChanged += (_, _) => UpdateTagRowHeight(Math.Max(1, _card.ClientSize.Width - _card.Padding.Horizontal));
 
         RefreshLogs(todayLogs);
+    }
 
-        // M2-14 淡入 200ms
-        _fadeTimer = new System.Windows.Forms.Timer { Interval = 20 };
-        _fadeTimer.Tick += (_, _) =>
-        {
-            Opacity += TargetOpacity / 10.0;
-            if (Opacity >= TargetOpacity) { Opacity = TargetOpacity; _fadeTimer.Stop(); }
-        };
-        _fadeTimer.Start();
+    protected override bool ShowWithoutActivation => !_presented;
+
+    /// <summary>透明状态下完成句柄、DPI、原生子控件和首次绘制，尚不遮挡桌面。</summary>
+    internal void PreparePresentation()
+    {
+        _presented = false;
+        IsReadyToPresent = false;
+        Opacity = 0;
+        Show();
+        RelayoutCard();
+        Refresh();
+        foreach (var control in Descendants(_frame).Where(control => control.Visible)) control.Update();
+        IsReadyToPresent = true;
+    }
+
+    internal void Present()
+    {
+        if (!IsReadyToPresent) throw new InvalidOperationException("提醒卡片尚未完成显示准备。");
+        _presented = true;
+        Opacity = TargetOpacity;
+        Update();
     }
 
     /// <summary>重建今日流水列表（保存/删除后由管理器调用，所有屏同步刷新）。</summary>
@@ -344,7 +377,7 @@ public sealed class OverlayForm : Form
             var btnContinue = MakeRowButton("继续");
             btnContinue.Click += (_, _) => _manager.OnContinueRequested(captured);
             var btnDelete = MakeRowButton("删除");
-            btnDelete.ForeColor = Color.FromArgb(240, 160, 160);
+            btnDelete.ForeColor = Color.FromArgb(180, 52, 64);
             btnDelete.Click += (_, _) => _manager.OnDeleteRequested(captured);
             row.Controls.Add(btnContinue, 1, 0);
             var edit = MakeRowButton("编辑");
@@ -370,6 +403,7 @@ public sealed class OverlayForm : Form
         _card.RowStyles[6].Height = visible ? S(LogPanelHeight + 12) : 0;
         if (visible) RefreshLogs(_todayLogs);
         else ClearLogRows();
+        RelayoutCard();
     }
 
     private void ClearLogRows()
@@ -385,10 +419,11 @@ public sealed class OverlayForm : Form
         var button = new Button
         {
             Text = text, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            FlatStyle = FlatStyle.Flat, BackColor = back, ForeColor = CardFore,
+            FlatStyle = FlatStyle.Flat, BackColor = back, ForeColor = back == AccentBlue ? Color.White : CardFore,
             Anchor = AnchorStyles.Left, Tag = new ButtonLayout(height, minWidth, padding, margin),
         };
-        button.FlatAppearance.BorderColor = Color.FromArgb(82, 82, 98);
+        button.FlatAppearance.BorderColor = back == AccentBlue ? AccentBlue : UiLayout.Border;
+        button.FlatAppearance.MouseOverBackColor = back == AccentBlue ? Color.FromArgb(50, 105, 180) : UiLayout.Selected;
         ApplyButtonLayout(button);
         return button;
     }
@@ -450,6 +485,7 @@ public sealed class OverlayForm : Form
 
     public void SetInputText(string text)
     {
+        text = UiLayout.MultilineText(text);
         if (_txtInput.Text == text) return;
         _suppressTextEvent = true;
         _txtInput.Text = text;
@@ -460,8 +496,33 @@ public sealed class OverlayForm : Form
     /// <summary>点选式标签：更新本屏所有标签按钮的选中高亮。</summary>
     public void SetSelectedTag(string? selectedTag)
     {
+        // 待办或历史记录可能带有自定义标签，或已经从快捷标签设置中移除的标签。
+        var layoutChanged = false;
+        foreach (var tag in _tagButtons.Keys.Where(tag => tag != selectedTag && !_config.Tags.Contains(tag)).ToList())
+        {
+            var button = _tagButtons[tag];
+            _tagButtons.Remove(tag);
+            _tagPanel.Controls.Remove(button);
+            button.Dispose();
+            layoutChanged = true;
+        }
+        if (!string.IsNullOrEmpty(selectedTag) && !_tagButtons.ContainsKey(selectedTag))
+        {
+            var button = MakeTagButton(selectedTag);
+            button.Click += (_, _) => _manager.OnTagToggled(selectedTag);
+            button.AutoEllipsis = true;
+            button.MaximumSize = new Size(Math.Max(1, _card.ClientSize.Width - _card.Padding.Horizontal - S(100)), 0);
+            _tagButtons.Add(selectedTag, button);
+            _tagPanel.Controls.Add(button);
+            layoutChanged = true;
+        }
         foreach (var (tag, btn) in _tagButtons)
+        {
             btn.BackColor = tag == selectedTag ? TagSelected : TagBack;
+            btn.ForeColor = tag == selectedTag ? AccentBlue : CardFore;
+            btn.FlatAppearance.BorderColor = tag == selectedTag ? AccentBlue : UiLayout.Border;
+        }
+        if (layoutChanged) UpdateTagRowHeight(Math.Max(1, _card.ClientSize.Width - _card.Padding.Horizontal));
     }
 
     /// <summary>保存按钮状态（冷却倒计时由管理器统一驱动，各屏一致）。</summary>
@@ -476,8 +537,12 @@ public sealed class OverlayForm : Form
     {
         var tagWidth = Math.Max(1, contentWidth - _btnSave.GetPreferredSize(Size.Empty).Width - S(12));
         _tagPanel.MaximumSize = new Size(tagWidth, 0);
+        _tagPanel.MinimumSize = Size.Empty;
         var height = Math.Max(_tagPanel.GetPreferredSize(new Size(tagWidth, 0)).Height, _btnSave.GetPreferredSize(Size.Empty).Height);
+        // 滚动容器收窄时，嵌套的 AutoSize + Dock.Fill 可能把标签面板压为 0 高。
+        _tagPanel.MinimumSize = new Size(0, height);
         _card.RowStyles[4].Height = height + S(14);
+        RelayoutCard();
     }
 
     public void UpdateCountdown(int remainingSec, int totalSec)
@@ -490,7 +555,7 @@ public sealed class OverlayForm : Form
     /// <summary>M2-11：倒计时结束不关窗、不自动保存，只高亮“刚活动完”。</summary>
     public void OnCountdownFinished()
     {
-        _btnDone.BackColor = Color.FromArgb(76, 175, 80);
+        _btnDone.BackColor = AccentBlue;
         _btnDone.Text = "刚活动完 ✓";
     }
 
@@ -544,16 +609,16 @@ public sealed class OverlayForm : Form
             control.Margin = ScalePadding(spacing.Margin);
             control.Padding = ScalePadding(spacing.Padding);
         }
-        foreach (var button in Descendants(_card).OfType<Button>()) ApplyButtonLayout(button);
+        foreach (var button in Descendants(_frame).OfType<Button>()) ApplyButtonLayout(button);
         int S(int v) => (int)Math.Round(v * dpi / 96.0);
         // 高缩放小屏（如 1080p@200%，逻辑宽仅 960）下按本屏实际逻辑尺寸封顶，
         // 防止卡片越屏、底部按钮被裁掉
         var availableWidth = Math.Max(1, _screen.Bounds.Width - S(40));
-        var cardWidth = Math.Min(S(720), availableWidth);
+        var cardWidth = Math.Min(S(660), availableWidth);
         var contentWidth = Math.Max(1, cardWidth - S(56));
         _card.MinimumSize = new Size(cardWidth, 0);
-        _card.MaximumSize = new Size(cardWidth, Math.Max(1, _screen.Bounds.Height - S(40)));
-        _card.Padding = new Padding(S(28), S(22), S(28), S(22));
+        _card.MaximumSize = new Size(cardWidth, 0);
+        _card.Padding = new Padding(S(28), S(22), S(28), S(12));
         _lblTitle.MaximumSize = new Size(contentWidth, 0);
         _lblHint.MaximumSize = new Size(contentWidth, 0);
         UpdateTagRowHeight(contentWidth);
@@ -569,14 +634,56 @@ public sealed class OverlayForm : Form
         _logPanelOuter.Height = S(LogPanelHeight);
         _progress.Height = S(14);
         _card.ResumeLayout(true);
+        RelayoutCard();
         LayoutLogRows();
+    }
+
+    private void RelayoutCard()
+    {
+        if (_layingOut || _frame == null || _footer == null || _viewport == null) return;
+        _layingOut = true;
+        try
+        {
+            var width = Math.Min(S(660), Math.Max(1, ClientSize.Width - S(40)));
+            var maxHeight = Math.Max(1, ClientSize.Height - S(40));
+            _footer.Width = width;
+            _card.MinimumSize = new Size(width, 0);
+            _card.MaximumSize = new Size(width, 0);
+            _card.Width = width;
+            _card.PerformLayout();
+            var footerHeight = _footer.GetPreferredSize(new Size(width, 0)).Height;
+            var bodyHeight = _card.GetPreferredSize(new Size(width, 0)).Height;
+            var scroll = footerHeight + bodyHeight > maxHeight;
+            var bodyWidth = Math.Max(1, width - (scroll ? SystemInformation.VerticalScrollBarWidth : 0));
+            _lblTitle.MaximumSize = new Size(Math.Max(1, bodyWidth - _card.Padding.Horizontal), 0);
+            UpdateTagRowHeight(Math.Max(1, bodyWidth - _card.Padding.Horizontal));
+            if (bodyWidth != width)
+            {
+                _card.MinimumSize = new Size(bodyWidth, 0);
+                _card.MaximumSize = new Size(bodyWidth, 0);
+                _card.Width = bodyWidth;
+                bodyHeight = _card.GetPreferredSize(new Size(bodyWidth, 0)).Height;
+            }
+            _frame.Size = new Size(width, Math.Min(maxHeight, bodyHeight + footerHeight));
+            _card.Height = bodyHeight;
+            // Dock.Top + AutoSize 的子表格不总会被 ScrollableControl 算入滚动范围，显式给出正文高度。
+            _viewport.AutoScrollMinSize = new Size(0, bodyHeight);
+            _frame.PerformLayout();
+            LayoutLogRows();
+        }
+        finally { _layingOut = false; }
+    }
+
+    protected override void OnClientSizeChanged(EventArgs e)
+    {
+        base.OnClientSizeChanged(e);
+        RelayoutCard();
     }
 
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
-            _fadeTimer.Dispose();
             foreach (var f in _fonts) f.Dispose();
         }
         base.Dispose(disposing);

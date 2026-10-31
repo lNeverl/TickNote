@@ -9,6 +9,7 @@ namespace SedentaryReminder;
 public abstract class DpiForm : Form
 {
     private int _appliedDpi = 96;
+    protected int AppliedDpi => _appliedDpi;
     private bool _initialPositionApplied;
 
     private static Icon? _appIcon;
@@ -26,6 +27,12 @@ public abstract class DpiForm : Form
     {
         AutoScaleMode = AutoScaleMode.None;
         Icon = AppIcon; // 标题栏 / Alt+Tab / 任务栏统一用软件图标
+    }
+
+    protected override void OnLoad(EventArgs e)
+    {
+        UiLayout.ApplyTheme(this);
+        base.OnLoad(e);
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -70,6 +77,9 @@ public abstract class DpiForm : Form
     private void KeepInsideWorkingArea()
     {
         var work = Screen.FromControl(this).WorkingArea;
+        // MinimumSize 也受系统缩放影响；小工作区时先降低下限，否则设置 Size 会被下限弹回。
+        if (MinimumSize.Width > work.Width || MinimumSize.Height > work.Height)
+            MinimumSize = new Size(Math.Min(MinimumSize.Width, work.Width), Math.Min(MinimumSize.Height, work.Height));
         if (Width > work.Width || Height > work.Height)
             Size = new Size(Math.Min(Width, work.Width), Math.Min(Height, work.Height));
         var x = Math.Clamp(Left, work.Left, Math.Max(work.Left, work.Right - Width));

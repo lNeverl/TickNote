@@ -10,6 +10,7 @@ public sealed class WorkLogBrowser : UserControl
     private readonly Button _dateButton;
     private readonly TextBox _search;
     private readonly ListView _list;
+    private readonly Label _empty;
     private readonly TextBox _preview;
     private readonly Label _count;
     private readonly Button _copy;
@@ -19,6 +20,7 @@ public sealed class WorkLogBrowser : UserControl
     private readonly Button _refresh;
     private readonly Button _clearSearch;
     private bool _compactFilters;
+    private bool _keepEmptyDate;
     public DateTime? SelectedDate { get; private set; }
     public WorkLogEntry? SelectedEntry => _list.SelectedItems.Count == 0 ? null : _list.SelectedItems[0].Tag as WorkLogEntry;
     public event Action? EntryActivated;
@@ -57,11 +59,12 @@ public sealed class WorkLogBrowser : UserControl
             using var calendar = new RecordedDatePickerForm(_db.GetLogDates(), SelectedDate);
             if (calendar.ShowDialog(FindForm()) != DialogResult.OK) return;
             SelectedDate = calendar.SelectedDate;
+            _keepEmptyDate = false;
             Reload();
         };
         _all = UiLayout.Button("查看全部");
         _all.Visible = !_fixedDate;
-        _all.Click += (_, _) => { SelectedDate = null; Reload(); };
+        _all.Click += (_, _) => SetDateScope(null);
         _searchHost = new Panel
         {
             Anchor = AnchorStyles.Left | AnchorStyles.Right, Height = 32, MinimumSize = new Size(0, 32),
@@ -109,7 +112,7 @@ public sealed class WorkLogBrowser : UserControl
             _refresh.Margin = new Padding(0, _compactFilters ? gap : 0, 0, 0);
         };
         root.Controls.Add(_filters, 0, 0);
-        _list = new ListView
+        _list = new ThemedListView
         {
             Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true,
             GridLines = false, MultiSelect = false, HideSelection = false, Margin = Padding.Empty,
@@ -120,18 +123,25 @@ public sealed class WorkLogBrowser : UserControl
         _list.Columns.Add("内容", 350);
         _list.Columns.Add("来源", 60);
         _list.SizeChanged += (_, _) => ResizeContentColumn();
-        _preview = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BackColor = Color.White, Margin = Padding.Empty };
+        _preview = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BackColor = Color.White, Margin = Padding.Empty,
+            PlaceholderText = "选择记录，在这里查看完整内容。" };
         _copy = UiLayout.Button("复制选中内容");
         _copy.Enabled = false;
         _copy.Margin = Padding.Empty;
         _list.DoubleClick += (_, _) => EntryActivated?.Invoke();
         _list.SelectedIndexChanged += (_, _) =>
         {
-            _preview.Text = SelectedEntry?.Content ?? "";
+            _preview.Text = UiLayout.MultilineText(SelectedEntry?.Content);
             _copy.Enabled = !string.IsNullOrEmpty(SelectedEntry?.Content);
             SelectionChanged?.Invoke();
         };
-        root.Controls.Add(_list, 0, 1);
+        var listHost = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty, BackColor = UiLayout.Surface };
+        _empty = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = UiLayout.Muted,
+            BackColor = UiLayout.Surface, Padding = new Padding(20), Visible = false };
+        listHost.Controls.Add(_list);
+        listHost.Controls.Add(_empty);
+        listHost.SizeChanged += (_, _) => _list.Bounds = listHost.ClientRectangle;
+        root.Controls.Add(listHost, 0, 1);
         var previewHeader = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, Margin = new Padding(0, 10, 0, 8) };
         previewHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         previewHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -154,11 +164,19 @@ public sealed class WorkLogBrowser : UserControl
         Reload();
     }
 
+    public void SetDateScope(DateTime? date)
+    {
+        SelectedDate = date?.Date;
+        _keepEmptyDate = date.HasValue;
+        _search.Clear();
+        Reload();
+    }
+
     public void Reload()
     {
         var selectedId = SelectedEntry?.Id;
         var dates = _db.GetLogDates();
-        if (!_fixedDate && SelectedDate is DateTime selected && !dates.Contains(selected)) SelectedDate = null;
+        if (!_fixedDate && !_keepEmptyDate && SelectedDate is DateTime selected && !dates.Contains(selected)) SelectedDate = null;
         _dateButton.Text = SelectedDate is DateTime date ? $"{date:yyyy-MM-dd} ▾" : "全部日期 ▾";
         _dateButton.Enabled = !_fixedDate && dates.Count > 0;
         _all.Enabled = SelectedDate != null;
@@ -184,9 +202,15 @@ public sealed class WorkLogBrowser : UserControl
             }
         }
         finally { _list.EndUpdate(); }
-        _preview.Text = SelectedEntry?.Content ?? "";
+        _preview.Text = UiLayout.MultilineText(SelectedEntry?.Content);
         _copy.Enabled = !string.IsNullOrEmpty(SelectedEntry?.Content);
         _count.Text = $"共 {_list.Items.Count} 条 · 选中记录可查看全文";
+        _empty.Text = query.Length > 0 ? "没有找到匹配的工作记录。\n试试其他关键词，或清空搜索。"
+            : SelectedDate.HasValue ? "当天还没有工作记录。\n可以补记一条，或在活动提醒时记录。"
+            : "还没有工作记录。\n可以补记一条，或在活动提醒时记录。";
+        _empty.Visible = _list.Items.Count == 0;
+        _list.Visible = _list.Items.Count > 0;
+        if (_list.Items.Count == 0) _empty.BringToFront();
         SelectionChanged?.Invoke();
     }
 
@@ -217,12 +241,17 @@ public sealed class WorkLogBrowser : UserControl
     private void ResizeContentColumn()
     {
         if (_list.Columns.Count < 5) return;
-        var factor = DeviceDpi / 96.0;
-        var compact = _list.ClientSize.Width < 560 * factor;
-        _list.Columns[2].Width = (int)Math.Round((compact ? 64 : 90) * factor);
-        _list.Columns[4].Width = (int)Math.Round((compact ? 52 : 60) * factor);
-        var otherWidths = _list.Columns.Cast<ColumnHeader>().Where(column => column.Index != 3).Sum(column => column.Width);
-        _list.Columns[3].Width = Math.Max((int)Math.Round(120 * factor), _list.ClientSize.Width - otherWidths - SystemInformation.VerticalScrollBarWidth - 4);
+        _list.BeginUpdate();
+        try
+        {
+            var factor = DeviceDpi / 96.0;
+            var compact = _list.ClientSize.Width < 560 * factor;
+            _list.Columns[2].Width = (int)Math.Round((compact ? 64 : 90) * factor);
+            _list.Columns[4].Width = (int)Math.Round((compact ? 52 : 60) * factor);
+            var otherWidths = _list.Columns.Cast<ColumnHeader>().Where(column => column.Index != 3).Sum(column => column.Width);
+            _list.Columns[3].Width = Math.Max((int)Math.Round(120 * factor), _list.ClientSize.Width - otherWidths - SystemInformation.VerticalScrollBarWidth - 4);
+        }
+        finally { _list.EndUpdate(); }
     }
     protected override void Dispose(bool disposing)
     {

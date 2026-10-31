@@ -17,7 +17,7 @@ public enum EngineTrayState
 /// 定时提醒引擎（M1）：1 秒一拍的状态机。
 /// 周期计时 → 到点弹窗；空闲/锁屏/午休/非工作时段暂停；推迟不限次数；演示勿扰自动延后。
 /// </summary>
-public sealed class ReminderEngine
+public sealed class ReminderEngine : IDisposable
 {
     private readonly AppConfig _config;
     private readonly System.Windows.Forms.Timer _timer;
@@ -53,6 +53,13 @@ public sealed class ReminderEngine
 
     public void Stop() => _timer.Stop();
 
+    public void Dispose()
+    {
+        _timer.Stop();
+        _timer.Tick -= OnTick;
+        _timer.Dispose();
+    }
+
     // ---------------- 外部事件 ----------------
 
     public void SetLocked(bool locked)
@@ -61,7 +68,7 @@ public sealed class ReminderEngine
         RaiseStatus();
     }
 
-    public void NotifyOverlayOpened() => OverlayOpen = true;
+    public void NotifyOverlayOpened() { OverlayOpen = true; RaiseStatus(); }
 
     /// <summary>弹窗关闭：done/skip → 清零开始下一周期；postpone → 推迟后再弹（M1-7 不限次数）。</summary>
     public void NotifyOverlayClosed(string action)
@@ -157,6 +164,14 @@ public sealed class ReminderEngine
         }
         var cycle = Math.Max(1, _config.IntervalMinutes) * 60.0;
         return Math.Clamp(1.0 - _remainingSec / cycle, 0.0, 1.0);
+    }
+
+    /// <summary>与托盘进度共用状态判断，主窗口无需另起一套计时器。</summary>
+    public TimeSpan? GetCountdownRemaining()
+    {
+        if (GetCountdownProgress() == null) return null;
+        var seconds = _postponeAt is DateTime at ? (at - DateTime.Now).TotalSeconds : _remainingSec;
+        return TimeSpan.FromSeconds(Math.Max(0, Math.Ceiling(seconds)));
     }
 
     // ---------------- 计时主循环 ----------------

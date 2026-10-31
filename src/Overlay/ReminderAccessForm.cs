@@ -21,7 +21,7 @@ public sealed class ReminderAccessForm : DpiForm
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.Controls.Add(new Label { Text = "输入已保留，可以切换到其他应用查看或复制内容。", AutoSize = true, MaximumSize = new Size(436, 0), Margin = new Padding(0, 0, 0, 10) }, 0, 0);
-        _draft = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Text = draft, BackColor = Color.White, Margin = Padding.Empty };
+        _draft = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Text = UiLayout.MultilineText(draft), BackColor = Color.White, Margin = Padding.Empty };
         root.Controls.Add(_draft, 0, 1);
         var copy = UiLayout.Button("复制当前内容");
         copy.Click += (_, _) =>
@@ -40,5 +40,5 @@ public sealed class ReminderAccessForm : DpiForm
         AcceptButton = back;
     }
 
-    public void SetDraft(string text) => _draft.Text = text;
+    public void SetDraft(string text) => _draft.Text = UiLayout.MultilineText(text);
 }

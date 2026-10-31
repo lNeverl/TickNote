@@ -26,11 +26,12 @@ public sealed class WizardForm : DpiForm
         // 固定紧凑尺寸：AutoSize 窗口经 DPI 缩放后收缩失败会留下大片空白，按钮被顶到远处
         ClientSize = new Size(560, 340);
         Font = new Font("Microsoft YaHei UI", 9F);
+        BackColor = UiLayout.Surface;
 
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(16),
+            Padding = new Padding(24),
             ColumnCount = 1,
             RowCount = 8,
         };
@@ -42,8 +43,8 @@ public sealed class WizardForm : DpiForm
 
         var lblTitle = new Label
         {
-            Text = "欢迎使用 TickNote（久坐提醒 + 工作流水记录）",
-            Font = new Font(Font.FontFamily, 12F, FontStyle.Bold),
+            Text = "欢迎使用 TickNote",
+            Font = new Font(Font.FontFamily, 15F, FontStyle.Bold),
             AutoSize = true,
             Margin = new Padding(0, 0, 0, 8),
         };
@@ -57,7 +58,7 @@ public sealed class WizardForm : DpiForm
 
         _rbPortable = new RadioButton
         {
-            Text = "便携模式：保存在软件目录下的 data 文件夹（整个文件夹拷到 U 盘/别的电脑即可继续使用）",
+            Text = "便携模式：保存在软件目录下的 data 文件夹",
             AutoSize = true,
             Checked = true,
             MaximumSize = new Size(520, 0), // 超长自动换行，不被右边缘裁掉
@@ -93,13 +94,14 @@ public sealed class WizardForm : DpiForm
             Margin = new Padding(26, 0, 0, 0),
         };
         _txtCustom = new TextBox { Width = 300, Enabled = false };
-        _btnBrowse = new Button { Text = "浏览…", Enabled = false, AutoSize = true };
+        _btnBrowse = UiLayout.Button("浏览…");
+        _btnBrowse.Enabled = false;
         customRow.Controls.Add(_txtCustom);
         customRow.Controls.Add(_btnBrowse);
 
         var hint = new Label
         {
-            Text = "直接关闭本窗口 = 不保存任何选择并退出程序。",
+            Text = "便携模式可将整个软件文件夹拷到其他电脑继续使用。关闭本窗口会退出程序。",
             AutoSize = true,
             ForeColor = SystemColors.GrayText,
             Margin = new Padding(0, 12, 0, 4),
@@ -111,7 +113,7 @@ public sealed class WizardForm : DpiForm
             FlowDirection = FlowDirection.RightToLeft,
             AutoSize = true,
         };
-        var btnOk = new Button { Text = "开始使用", AutoSize = true, Padding = new Padding(10, 3, 10, 3) };
+        var btnOk = UiLayout.Button("开始使用", primary: true);
         btnOk.Click += OnOk;
         btnRow.Controls.Add(btnOk);
 
@@ -124,6 +126,12 @@ public sealed class WizardForm : DpiForm
         root.Controls.Add(hint, 0, 6);
         root.Controls.Add(btnRow, 0, 7);
         Controls.Add(root);
+        root.SizeChanged += (_, _) =>
+        {
+            var width = Math.Max(1, root.ClientSize.Width - root.Padding.Horizontal);
+            foreach (var label in new[] { lblTitle, lblDesc, hint }) label.MaximumSize = new Size(width, 0);
+            _rbPortable.MaximumSize = _rbCustom.MaximumSize = new Size(width, 0);
+        };
         AcceptButton = btnOk;
 
         _rbPortable.CheckedChanged += (_, _) =>

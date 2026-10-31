@@ -21,16 +21,17 @@ public sealed class AppContext : ApplicationContext
     internal ReportService Reports = null!;
     internal TrayIcon Tray = null!;
 
-    // 非模态窗口单例：重复点菜单项时拉到前台，不再开新窗（两个窗口内容不一致会互相覆盖）
-    private LogViewForm? _logViewToday;
-    private LogViewForm? _logViewHistory;
-    private Todo.TodoViewForm? _todoView;
-    private ReportViewForm? _reportView;
-    // 模态窗口单例：模态循环下托盘菜单仍可能触发菜单项
-    private readonly Dictionary<Type, Form> _openDialogs = new();
+    private MainForm? _mainWindow;
+    private readonly bool _startServices;
+    private bool _exiting;
+    private readonly Control? _eventDispatcher;
+    internal MainForm? MainWindow => _mainWindow;
 
-    public AppContext(string dataDir)
+    public AppContext(string dataDir) : this(dataDir, startServices: true) { }
+
+    internal AppContext(string dataDir, bool startServices)
     {
+        _startServices = startServices;
         // M0-8：数据目录自包含结构
         Directory.CreateDirectory(Path.Combine(dataDir, "exports"));
         Directory.CreateDirectory(Path.Combine(dataDir, "backup"));
@@ -38,31 +39,55 @@ public sealed class AppContext : ApplicationContext
         Config = AppConfig.Load(dataDir);
         Db = new Database(dataDir);
         BackupService.AutoBackupOnStartup(dataDir); // M6-4 每天首次启动自动备份
-        AutoStart.EnsurePathCurrent(Config.AutoStart); // M5-4 EXE 路径变化自动修正
+        if (startServices) AutoStart.EnsurePathCurrent(Config.AutoStart); // M5-4 EXE 路径变化自动修正
 
         Reports = new ReportService(Config, Db);
 
         Overlay = new OverlayManager(Config, Db);
-        Overlay.Prewarm(); // 预热分层窗口/字体/JIT，首次弹窗背景与卡片同现不拖沓
+        if (startServices) Overlay.Prewarm(); // 预热分层窗口/字体/JIT，首次弹窗背景与卡片同现不拖沓
         Overlay.Closed += action =>
         {
             Engine.NotifyOverlayClosed(action);
             // 保存成功给用户一个确定的反馈（M3-1 即写即存）
-            if (Overlay.LastCloseSavedLog) Tray.ShowBalloon("已保存一条工作记录，可在“查看今日”中查看");
+            if (Overlay.LastCloseSavedLog) Notify("已保存一条工作记录，可在“查看今日”中查看");
         };
         Engine = new ReminderEngine(Config);
-        Engine.FireRequested += cycleStart =>
+        Engine.FireRequested += OpenReminder;
+
+        if (startServices)
         {
-            Engine.NotifyOverlayOpened();
-            Overlay.Show(cycleStart);
-        };
+            // 系统事件可能来自后台线程，统一送回创建 WinForms 窗口的线程。
+            _eventDispatcher = new Control();
+            _ = _eventDispatcher.Handle;
+            SystemEvents.SessionSwitch += OnSessionSwitch;
+            SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+            Tray = new TrayIcon(this);
+            Engine.Start();
+        }
+    }
 
-        // M1-6 锁屏暂停 / N4 显示器热插拔
-        SystemEvents.SessionSwitch += OnSessionSwitch;
-        SystemEvents.DisplaySettingsChanged += (_, _) => Overlay.OnDisplaySettingsChanged();
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e) => OnUiThread(Overlay.OnDisplaySettingsChanged);
 
-        Tray = new TrayIcon(this);
-        Engine.Start();
+    private void OnUiThread(Action action)
+    {
+        var dispatcher = _eventDispatcher;
+        if (_exiting || dispatcher == null || dispatcher.IsDisposed) return;
+        if (!dispatcher.InvokeRequired) { action(); return; }
+        try { dispatcher.BeginInvoke((MethodInvoker)(() => { if (!_exiting) action(); })); }
+        catch (InvalidOperationException) when (_exiting || dispatcher.IsDisposed) { }
+    }
+
+    internal void OpenReminder(DateTime cycleStart)
+    {
+        if (_exiting || Overlay.IsOpen) return;
+        Engine.NotifyOverlayOpened();
+        try { Overlay.Show(cycleStart); }
+        catch (Exception ex)
+        {
+            // 显示失败时回退引擎状态，避免永久停在“弹窗显示中”。
+            Engine.NotifyOverlayClosed("postpone");
+            Notify("提醒界面未能打开，已推迟后重试：" + ex.Message);
+        }
     }
 
     /// <summary>读取引导配置定位数据目录；缺失/失效时走首次向导（M0-1/M0-6）。</summary>
@@ -81,55 +106,53 @@ public sealed class AppContext : ApplicationContext
 
     private void OnSessionSwitch(object? sender, SessionSwitchEventArgs e)
     {
-        if (e.Reason == SessionSwitchReason.SessionLock) Engine.SetLocked(true);
-        else if (e.Reason == SessionSwitchReason.SessionUnlock) Engine.SetLocked(false);
+        OnUiThread(() =>
+        {
+            if (e.Reason == SessionSwitchReason.SessionLock) Engine.SetLocked(true);
+            else if (e.Reason == SessionSwitchReason.SessionUnlock) Engine.SetLocked(false);
+        });
     }
 
     // ---------------- 托盘菜单动作 ----------------
 
-    /// <summary>已打开的窗口拉到前台（最小化先还原）；已关闭/未打开返回 false。</summary>
-    private static bool TryActivate(Form? form)
+    internal void ShowMainWindow(MainPage? page = null)
     {
-        if (form is not { IsDisposed: false }) return false;
-        if (form.WindowState == FormWindowState.Minimized) form.WindowState = FormWindowState.Normal;
-        form.Activate();
-        return true;
+        if (_exiting) return;
+        if (_mainWindow is not { IsDisposed: false }) _mainWindow = new MainForm(this);
+        if (page.HasValue) _mainWindow.Navigate(page.Value);
+        _mainWindow.Show();
+        if (_mainWindow.WindowState == FormWindowState.Minimized) _mainWindow.WindowState = FormWindowState.Normal;
+        _mainWindow.Activate();
     }
 
     internal void ShowLogView(DateTime? fixedDate)
     {
-        if (fixedDate.HasValue)
-        {
-            if (TryActivate(_logViewToday)) return;
-            _logViewToday = new LogViewForm(this, fixedDate);
-            _logViewToday.FormClosed += (_, _) => _logViewToday = null;
-            _logViewToday.Show();
-        }
-        else
-        {
-            if (TryActivate(_logViewHistory)) return;
-            _logViewHistory = new LogViewForm(this, null);
-            _logViewHistory.FormClosed += (_, _) => _logViewHistory = null;
-            _logViewHistory.Show();
-        }
+        ShowMainWindow(MainPage.History);
+        (_mainWindow!.CurrentPage as LogPage)?.SetDateScope(fixedDate);
     }
 
-    internal void ShowManualEntry() => ShowDialogOnce(() => new ManualEntryForm(Db, Config));
+    internal void ShowManualEntry() => ShowMainWindow(MainPage.ManualEntry);
+    internal void ShowTodoView() => ShowMainWindow(MainPage.Todos);
+    internal void ShowReportView() => ShowMainWindow(MainPage.Reports);
+    internal void ShowImportReport() => ShowMainWindow(MainPage.ImportReport);
+    internal void ShowExport() => ShowMainWindow(MainPage.Export);
+    internal void ShowSettings() => ShowMainWindow(MainPage.Settings);
+    internal void ShowAbout() => ShowMainWindow(MainPage.About);
 
-    internal void ShowTodoView()
+    internal void Notify(string message)
     {
-        if (TryActivate(_todoView)) return;
-        _todoView = new Todo.TodoViewForm(Db);
-        _todoView.FormClosed += (_, _) => _todoView = null;
-        _todoView.Show();
+        Tray?.ShowBalloon(message);
+        _mainWindow?.ShowNotification(message);
     }
 
-    internal void ShowReportView()
+    internal void ApplyAutoStart(bool enabled) { if (_startServices) AutoStart.Apply(enabled); }
+    internal bool ConfirmExit(WorkspacePage? except = null) => _mainWindow?.ConfirmExit(except) ?? true;
+
+    internal bool PrepareDataMigration()
     {
-        if (TryActivate(_reportView)) return;
-        _reportView = new ReportViewForm(this);
-        _reportView.FormClosed += (_, _) => _reportView = null;
-        _reportView.Show();
+        if (!Overlay.TrySavePendingDraft()) return false;
+        _mainWindow?.SaveWindowState();
+        return true;
     }
 
     internal void CopyDailyPrompt()
@@ -137,11 +160,11 @@ public sealed class AppContext : ApplicationContext
         try
         {
             Clipboard.SetText(Reports.BuildDailyPrompt(DateTime.Today));
-            Tray.ShowBalloon("日报提示词+今日流水已复制，请直接粘贴给 AI");
+            Notify("日报提示词+今日流水已复制，请直接粘贴给 AI");
         }
         catch (Exception ex)
         {
-            Tray.ShowBalloon("复制失败，剪贴板被其他程序占用：" + ex.Message);
+            Notify("复制失败，剪贴板被其他程序占用：" + ex.Message);
         }
     }
 
@@ -150,62 +173,45 @@ public sealed class AppContext : ApplicationContext
         try
         {
             Clipboard.SetText(Reports.BuildWeeklyPrompt(DateTime.Today));
-            Tray.ShowBalloon("周报提示词+本周数据已复制，请直接粘贴给 AI");
+            Notify("周报提示词+本周数据已复制，请直接粘贴给 AI");
         }
         catch (Exception ex)
         {
-            Tray.ShowBalloon("复制失败，剪贴板被其他程序占用：" + ex.Message);
+            Notify("复制失败，剪贴板被其他程序占用：" + ex.Message);
         }
     }
-
-    /// <summary>模态窗口单例：已打开时拉到前台而不是再开一个。</summary>
-    private void ShowDialogOnce<T>(Func<T> create) where T : Form
-    {
-        if (_openDialogs.TryGetValue(typeof(T), out var existing) && TryActivate(existing)) return;
-        using var f = create();
-        _openDialogs[typeof(T)] = f;
-        try { f.ShowDialog(); }
-        finally { _openDialogs.Remove(typeof(T)); }
-    }
-
-    internal void ShowImportReport() => ShowDialogOnce(() => new ImportReportForm(this));
-
-    internal void ShowExport() => ShowDialogOnce(() => new ExportForm(this));
-
-    internal void ShowSettings() => ShowDialogOnce(() => new SettingsForm(this));
-
-    internal void ShowAbout() => ShowDialogOnce(() => new AboutForm(Config.DataDir));
 
     internal void PauseReminder(TimeSpan duration)
     {
         Engine.PauseUntil(DateTime.Now.Add(duration));
-        Tray.ShowBalloon($"已暂停提醒，{DateTime.Now.Add(duration):HH:mm} 自动恢复");
+        Notify($"已暂停提醒，{DateTime.Now.Add(duration):HH:mm} 自动恢复");
     }
 
     internal void PauseReminderToday()
     {
         Engine.PauseRestOfToday();
-        Tray.ShowBalloon("已暂停提醒到今天下班");
+        Notify("已暂停提醒到今天下班");
     }
 
     internal void ResumeReminder()
     {
         Engine.ResumeFromPause();
-        Tray.ShowBalloon("已恢复提醒");
+        Notify("已恢复提醒");
     }
 
-    internal void RestartApplication()
-    {
-        Engine.Stop();
-        Tray.Dispose();
-        System.Windows.Forms.Application.Restart();
-        ExitThread();
-    }
+    internal void RestartApplication(bool confirmChanges = true) => Shutdown(restart: true, confirmChanges);
+    internal void ExitApplication() => Shutdown(restart: false, confirmChanges: true);
 
-    internal void ExitApplication()
+    private void Shutdown(bool restart, bool confirmChanges)
     {
+        if (_exiting || confirmChanges && !ConfirmExit()) return;
+        if (!Overlay.TryCloseForShutdown()) return;
+        _exiting = true;
+        _mainWindow?.CloseForExit();
         Engine.Stop();
-        Tray.Dispose();
+        Tray?.Dispose();
+        Tray = null!;
+        if (restart) System.Windows.Forms.Application.Restart();
         ExitThread();
     }
 
@@ -213,7 +219,14 @@ public sealed class AppContext : ApplicationContext
     {
         if (disposing)
         {
+            _exiting = true;
             SystemEvents.SessionSwitch -= OnSessionSwitch;
+            SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+            Engine.Dispose();
+            _eventDispatcher?.Dispose();
+            Overlay.Dispose();
+            _mainWindow?.Dispose();
+            Tray?.Dispose();
             Db.Dispose();
         }
         base.Dispose(disposing);

@@ -5,6 +5,67 @@ internal static class UiLayout
 {
     internal static readonly Color PageBack = Color.FromArgb(248, 249, 251);
     internal static readonly Color Accent = Color.FromArgb(40, 90, 160);
+    internal static readonly Color Surface = Color.White;
+    internal static readonly Color Sidebar = Color.FromArgb(240, 242, 245);
+    internal static readonly Color Text = Color.FromArgb(37, 45, 57);
+    internal static readonly Color Muted = Color.FromArgb(105, 117, 135);
+    internal static readonly Color Border = Color.FromArgb(220, 225, 232);
+    internal static readonly Color Selected = Color.FromArgb(232, 239, 249);
+
+    internal static int Scale(Control control, int value) => (int)Math.Round(value * control.DeviceDpi / 96.0);
+    internal static string MultilineText(string? value) => (value ?? "").ReplaceLineEndings(Environment.NewLine);
+
+    /// <summary>只统一外观，不在主题遍历中修改控件尺寸或触发二次 DPI 缩放。</summary>
+    internal static void ApplyTheme(Control root)
+    {
+        root.ForeColor = Text;
+        foreach (Control control in root.Controls)
+        {
+            if (control is Label label && (label.ForeColor == SystemColors.GrayText || label.ForeColor == Color.Gray))
+                label.ForeColor = Muted;
+            if (control is TextBoxBase text)
+            {
+                if (text.BorderStyle != BorderStyle.None) text.BorderStyle = BorderStyle.FixedSingle;
+                text.BackColor = Surface;
+                text.ForeColor = Text;
+            }
+            if (control is ListBox list)
+            {
+                list.BorderStyle = BorderStyle.None;
+                list.BackColor = Surface;
+                list.IntegralHeight = false;
+            }
+            if (control is TabPage tab) tab.BackColor = Surface;
+            if (control is Button button && button.AutoSize)
+            {
+                button.FlatStyle = FlatStyle.Flat;
+                var primary = button.BackColor == Accent;
+                button.UseVisualStyleBackColor = false;
+                button.BackColor = primary ? Accent : Surface;
+                button.ForeColor = primary ? Color.White : Text;
+                button.FlatAppearance.BorderColor = primary ? Accent : Border;
+                button.FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(50, 105, 180) : Selected;
+            }
+            ApplyThemeChildren(control);
+        }
+    }
+
+    private static void ApplyThemeChildren(Control control)
+    {
+        // ApplyTheme 的根前景色赋值会覆盖辅助说明，保留它再继续处理子树。
+        var fore = control.ForeColor;
+        ApplyTheme(control);
+        control.ForeColor = fore;
+    }
+
+    internal static Panel SurfaceHost(Control content, int padding = 16)
+    {
+        var panel = new Panel { Dock = DockStyle.Fill, BackColor = Surface, Padding = new Padding(padding), Margin = Padding.Empty };
+        content.Dock = DockStyle.Fill;
+        panel.Controls.Add(content);
+        panel.Paint += (_, e) => { using var pen = new Pen(Border); e.Graphics.DrawRectangle(pen, 0, 0, Math.Max(0, panel.Width - 1), Math.Max(0, panel.Height - 1)); };
+        return panel;
+    }
 
     internal static Button Button(string text, bool primary = false)
     {
@@ -14,10 +75,10 @@ internal static class UiLayout
             MinimumSize = new Size(76, 32), Padding = new Padding(12, 4, 12, 4),
             Margin = new Padding(0, 0, 8, 0), Anchor = AnchorStyles.Left,
             FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = false,
-            BackColor = primary ? Accent : Color.White,
-            ForeColor = primary ? Color.White : Color.FromArgb(45, 52, 64),
+            BackColor = primary ? Accent : Surface,
+            ForeColor = primary ? Color.White : Text,
         };
-        button.FlatAppearance.BorderColor = primary ? Accent : Color.FromArgb(205, 211, 220);
+        button.FlatAppearance.BorderColor = primary ? Accent : Border;
         button.FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(50, 105, 180) : Color.FromArgb(235, 242, 251);
         button.EnabledChanged += (_, _) =>
         {

@@ -23,7 +23,7 @@ public sealed class TodoPickerForm : DpiForm
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.Controls.Add(new Label
         {
-            Text = "默认显示全部日期的未完成待办。选择后只填入提醒草稿，不会完成或修改待办。",
+            Text = "默认显示全部日期的未完成待办。选择后将内容和标签填入提醒草稿，不会完成或修改待办。",
             AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 10),
         }, 0, 0);
         var browser = new TodoBrowser(db, dateScope: null, allowCompletion: false, showCompleted: false);
